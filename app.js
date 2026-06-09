@@ -849,3 +849,4 @@ document.addEventListener("DOMContentLoaded", () => {
   const sVen=document.getElementById('search-ventes'); if(sVen) sVen.addEventListener('input',afficherVentes);
   initialiserApplication();
 });
+
