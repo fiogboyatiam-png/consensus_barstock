@@ -198,3 +198,64 @@ hr.sep { border: 0; border-top: 2px dashed #ccc; margin: 36px 0; }
   .btn-group { justify-content: stretch; }
   .btn-group .btn { flex: 1; text-align: center; }
 }
+/* Adapter le site à un téléphone mobile*/
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0 10px;
+    margin: 10px auto;
+  }
+  .card {
+    padding: 15px;
+    margin-bottom: 15px;
+  }
+  /* Réduire la taille des textes dans le header si nécessaire */
+  header { font-size: 18px; padding: 10px; }
+}
+
+/* Adapter le site à un téléphone mobile* côté tableau*/
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ... contenu existant ... */
+
+/* Adaptation pour écrans mobiles (tablettes et téléphones) */
+@media (max-width: 768px) {
+  /* Vos ajustements pour les stats et la navigation */
+  #stats-jour {
+    gap: 10px;
+    padding: 10px;
+    flex-wrap: wrap; /* Permet aux stats de passer à la ligne si besoin */
+  }
+  
+  .stat-jour-val { 
+    font-size: 16px; 
+  }
+  
+  .nav-btn {
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+  
+  .btn-sm { 
+    padding: 4px 6px; 
+    font-size: 11px; 
+  }
+}
+
+@media (max-width: 768px) {
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .form-group > div {
+    width: 100%;
+  }
+  input, select { width: 100%; }
+}
