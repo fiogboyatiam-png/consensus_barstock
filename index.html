@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consensus BarStock</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Bannière hors-ligne -->
+<div id="offline-banner">📡 Connexion perdue — Reconnectez-vous pour synchroniser.</div>
+<div id="entete-fixe">
+<!-- Header -->
+<header>
+  <span>🍺 Consensus BarStock</span>
+  <div class="header-right">
+    <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
+  </div>
+</header>
+
+<!-- Stats du jour -->
+<div id="stats-jour">
+  <div class="stat-jour-item"><div class="stat-jour-label">Ventes aujourd'hui</div><div class="stat-jour-val" id="sj-nb">—</div></div>
+  <div class="stat-jour-item"><div class="stat-jour-label">Total encaissé</div><div class="stat-jour-val" id="sj-total">—</div></div>
+  <div class="stat-jour-item"><div class="stat-jour-label">Bénéfice du jour</div><div class="stat-jour-val" id="sj-benef">—</div></div>
+  <div class="stat-jour-item"><div class="stat-jour-label">Articles en rupture</div><div class="stat-jour-val" id="sj-rupture">—</div></div>
+</div>
+
+<!-- Navigation -->
+<nav>
+  <button class="nav-btn active" data-section="catalogue" onclick="showSection('catalogue')">📦 Catalogue</button>
+  <button class="nav-btn" data-section="etat-stock" onclick="showSection('etat-stock')">📊 État Stock</button>
+  <button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')">🔄 Stockage / Récup</button>
+  <button class="nav-btn" data-section="ventes" onclick="showSection('ventes')">💰 Caisse Ventes</button>
+  <button class="nav-btn" data-section="historique" onclick="showSection('historique')">📋 Historique</button>
+</nav>
+</div>
+<!-- MODAL CONFIRMATION VENTE -->
+<div class="modal-overlay" id="modal-confirm-vente">
+  <div class="modal-box">
+    <div class="modal-title">🧾 Confirmer la vente</div>
+    <div class="modal-recap" id="modal-recap-contenu"></div>
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="fermerModalVente()">✖ Annuler</button>
+      <button class="btn" onclick="confirmerVenteFinale()">✅ Encaisser</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<div class="container">
+
+  <!-- ===== CATALOGUE ===== -->
+  <div id="catalogue" class="section active">
+    <div id="stats-catalogue" class="stats-container"></div>
+    <div class="card">
+      <h3 style="margin-bottom:16px;">➕ Ajouter un produit</h3>
+      <form id="form-ajouter-boisson" onsubmit="ajouterBoisson(event)">
+        <div class="form-group">
+          <div><label>Désignation</label><input type="text" id="cat-nom" placeholder="Ex: PILS" required></div>
+          <div><label>Catégorie</label>
+            <select id="cat-categorie">
+              <option value="Bière">Bière</option>
+              <option value="Sucrerie">Sucrerie</option>
+              <option value="Eau">Eau</option>
+              <option value="Vin">Vin</option>
+              <option value="Whisky">Whisky</option>
+              <option value="Énergie">Énergie</option>
+            </select>
+          </div>
+          <div><label>Type Bouteille</label>
+            <select id="cat-type">
+              <option value="grand bouteille">Grand format (C12)</option>
+              <option value="petit bouteille">Petit format (C24)</option>
+            </select>
+          </div>
+          <div><label>Prix d'un cassier</label><input type="number" id="cat-pu-initial" min="0" required></div>
+          <div><label>Prix unitaire vente</label><input type="number" id="cat-prix-unitaire" min="0" required></div>
+          <div><label>Stock initial</label><input type="number" id="cat-stock" placeholder="0" min="0"></div>
+          <div><label>Seuil d'alerte</label><input type="number" id="cat-seuil" placeholder="6" min="1"></div>
+        </div>
+        <button type="submit" class="btn">Enregistrer</button>
+      </form>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;">Liste des articles</h3>
+      <input type="text" id="search-catalogue" class="search-box" placeholder="🔍 Rechercher...">
+      <table id="table-catalogue">
+        <thead><tr>
+          <th>Désignation</th><th>Type</th><th>Catégorie</th>
+          <th>Prix Cassier</th><th>Prix Vente Unit.</th>
+          <th>Stock</th><th>Statut</th><th>Actions</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== ÉTAT STOCK ===== -->
+  <div id="etat-stock" class="section">
+    <div class="card">
+      <h3 style="margin-bottom:6px;">📊 État Général des Produits</h3>
+      <p style="font-size:13px;color:#888;margin-bottom:14px;">Lignes colorées selon l'état du stock</p>
+      <input type="text" id="search-stock" class="search-box" placeholder="🔍 Rechercher..." oninput="filtrerEtatStock()">
+      <table id="table-etat-produits">
+        <thead><tr>
+          <th>Désignation</th><th>Type</th><th>Catégorie</th>
+          <th>Stock Actuel</th><th>Seuil</th><th>Statut</th><th>Actions</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== STOCKAGE / RÉCUP ===== -->
+  <div id="stockage-recup" class="section">
+    <div class="card">
+      <div style="display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap;">
+        <button id="btn-mode-appro" onclick="changerModeStockage('appro')" style="border:none;padding:10px 16px;font-size:14px;border-radius:8px;cursor:pointer;font-weight:700;transition:0.2s;">📦 Approvisionnement fournisseur</button>
+        <button id="btn-mode-retour" onclick="changerModeStockage('retour')" style="border:none;padding:10px 16px;font-size:14px;border-radius:8px;cursor:pointer;font-weight:700;transition:0.2s;">🔄 Retour client / Pertes</button>
+      </div>
+      <h3 id="stockage-titre" style="margin-top:0;">📦 Approvisionnement fournisseur</h3>
+      <p id="stockage-description" style="font-size:13px;color:#888;margin-bottom:16px;">💡 Gestion des stocks.</p>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <input type="text" id="search-stockage" class="search-box" style="max-width:320px;" placeholder="🔍 Rechercher..." oninput="afficherStockage()">
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid #f0f0f0;">
+            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Boisson</th>
+            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Type</th>
+            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:center;">Stock</th>
+            <th id="th-dynamique-prix" style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Prix Cassier</th>
+            <th id="th-dynamique-action" style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-stockage"></tbody>
+      </table>
+      <div id="zone-total-fournisseur" style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:14px;border:1px solid #e2e8f0;border-radius:8px;margin-top:14px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span>💰 <strong>Montant total dû au fournisseur :</strong></span>
+          <span id="total-fournisseur-stockage" style="font-size:18px;font-weight:bold;color:#2e7d32;">0 FCFA</span>
+          <button style="background:none;border:none;cursor:pointer;font-size:16px;" onclick="modifierPrixTotalFournisseurStockage()" title="Modifier">✏️</button>
+        </div>
+        <button class="btn" onclick="envoyerTotalVersHistoriqueFournisseur()">🚀 Valider comme Versement</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CAISSE VENTES ===== -->
+  <div id="ventes" class="section">
+    <div class="vente-layout">
+      <div class="vente-produits">
+        <div class="card">
+          <h3 style="margin-bottom:12px;">Sélection des boissons</h3>
+          <input type="text" id="search-ventes" class="search-box" placeholder="🔍 Rechercher...">
+          <div id="liste-produits-vente" class="liste-grid"></div>
+        </div>
+      </div>
+      <div class="vente-ticket">
+        <div class="ticket-sticky">
+          <div class="card" style="border-top:4px solid var(--primary);">
+            <h3 style="margin-top:0;">🧾 Ticket de Caisse</h3>
+            <div id="ticket-detail"></div>
+            <div class="ticket-total-box">
+              <span>TOTAL :</span>
+              <span id="total-montant">0 FCFA</span>
+            </div>
+            <div class="ticket-recap-fin">
+              <span>Coût achat : <span id="recap-bbc">0 FCFA</span></span>
+              <span>Bénéfice : <strong id="recap-benef" style="color:var(--primary);">0 FCFA</strong></span>
+            </div>
+            <div class="ticket-actions">
+              <button class="btn btn-danger" style="flex:1;" onclick="annulerVente()">✖ Vider</button>
+              <button class="btn" style="flex:2;font-size:16px;" onclick="ouvrirModalVente()">✅ Encaisser</button>
+            </div>
+          </div>
+          <div class="card derniere-vente-card">
+            <div class="derniere-vente-label">🔙 Dernière vente enregistrée</div>
+            <div id="derniere-vente-info" class="derniere-vente-info">—</div>
+            <button class="btn btn-warning" style="width:100%;font-size:13px;" onclick="annulerDerniereVente()">↩️ Annuler la dernière vente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== HISTORIQUE ===== -->
+  <div id="historique" class="section">
+
+    <!-- Stats globales -->
+    <div id="stats-historique" class="stats-container"></div>
+
+    <!-- Ventes -->
+    <div class="card">
+      <div class="card-header"><h3>📋 Historique des Ventes de la Caisse</h3></div>
+
+      <div class="histo-filtres">
+        <div>
+          <label>🔍 Boisson</label>
+          <input type="text" id="filtre-histo-boisson" placeholder="Nom..." oninput="afficherHistorique()">
+        </div>
+        <div>
+          <label>📅 Date (JJ/MM/AAAA)</label>
+          <input type="text" id="filtre-histo-date" placeholder="Ex: 08/06/2026" oninput="afficherHistorique()">
+        </div>
+        <div>
+          <label>🏷️ Type</label>
+          <select id="filtre-histo-type" onchange="afficherHistorique()">
+            <option value="">Tous</option>
+            <option value="vente">💰 Ventes</option>
+            <option value="retour">🔄 Retours</option>
+            <option value="perte">⚠️ Pertes</option>
+            <option value="fournisseur">💳 Fournisseur</option>
+          </select>
+        </div>
+        <div style="align-self:flex-end;">
+          <button class="btn btn-grey btn-sm" onclick="reinitialiserFiltres()">✖ Effacer</button>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Date & Heure</th>
+            <th>Articles vendus</th>
+            <th>Total Encaissé</th>
+            <th>Bénéfice Net</th>
+          </tr>
+        </thead>
+        <tbody id="historique-ventes-rows"></tbody>
+      </table>
+
+      <div class="btn-group">
+        <button class="btn btn-info" onclick="telechargerPDFVentes()">⬇️ PDF</button>
+        <button class="btn btn-green" onclick="envoyerWhatsAppVentes()">📲 WhatsApp</button>
+        <button class="btn btn-warning" onclick="exporterExcel()">📊 Excel</button>
+        <button class="btn btn-danger" onclick="reinitialiserVentes()">🗑️ Réinitialiser</button>
+      </div>
+    </div>
+
+    <!-- Graphique -->
+    <div class="card">
+      <h3 style="margin-bottom:14px;">📈 Ventes des 7 derniers jours</h3>
+      <canvas id="graphique-ventes" height="110"></canvas>
+    </div>
+
+    <hr class="sep">
+
+    <!-- ===== ESPACE FOURNISSEUR ===== -->
+    <div class="card">
+      <div class="card-header" style="background:#388e3c;"><h3>🏪 Suivi Fournisseur</h3></div>
+
+      <!-- Bilan récapitulatif -->
+      <div class="fourn-bilan-box" id="fourn-bilan-box">
+        <div class="fourn-bilan-item fourn-bilan-livraisons">
+          <div class="fourn-bilan-label">📦 Total Livré</div>
+          <div class="fourn-bilan-val" id="fourn-total-livre">0 FCFA</div>
+        </div>
+        <div class="fourn-bilan-item fourn-bilan-paie">
+          <div class="fourn-bilan-label">💳 Total Payé</div>
+          <div class="fourn-bilan-val" id="fournisseur-bilan-paye">0 FCFA</div>
+        </div>
+        <div class="fourn-bilan-item fourn-bilan-restant">
+          <div class="fourn-bilan-label">⚠️ Reste Dû</div>
+          <div class="fourn-bilan-val" id="fourn-reste-du">0 FCFA</div>
+        </div>
+      </div>
+
+      <!-- Formulaire ajout livraison -->
+      <div class="fourn-section-titre fourn-titre-livraison">📦 Enregistrer une livraison fournisseur</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end;">
+        <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:5px;">
+          <label>Montant de la livraison (FCFA)</label>
+          <input type="number" id="fourn-montant-livraison" placeholder="Ex: 75000" min="0">
+        </div>
+        <div style="flex:2;min-width:200px;display:flex;flex-direction:column;gap:5px;">
+          <label>Détail de la livraison</label>
+          <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12">
+        </div>
+        <button class="btn" onclick="enregistrerLivraisonFournisseur()">📦 Enregistrer livraison</button>
+      </div>
+
+      <!-- Tableau livraisons -->
+      <div class="fourn-section-titre fourn-titre-livraison">📦 Historique des Livraisons</div>
+      <table>
+        <thead><tr>
+          <th>Date & Heure</th>
+          <th>Détail livraison</th>
+          <th>Montant livré</th>
+        </tr></thead>
+        <tbody id="fourn-livraisons-rows"></tbody>
+      </table>
+
+      <!-- Tableau paiements -->
+      <div class="fourn-section-titre fourn-titre-paiement" style="margin-top:22px;">💳 Historique des Paiements</div>
+      <table>
+        <thead><tr>
+          <th>Date & Heure</th>
+          <th>Montant Payé</th>
+          <th>Note / Commentaire</th>
+        </tr></thead>
+        <tbody id="fournisseur-historique-rows"></tbody>
+      </table>
+
+      <div class="btn-group">
+        <button class="btn btn-info" onclick="telechargerPDFFournisseur()">⬇️ PDF</button>
+        <button class="btn btn-green" onclick="envoyerWhatsAppFournisseur()">📲 WhatsApp</button>
+        <button class="btn btn-danger" onclick="reinitialiserFournisseur()">🗑️ Réinitialiser</button>
+      </div>
+    </div>
+
+  </div><!-- fin historique -->
+
+</div><!-- fin container -->
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
