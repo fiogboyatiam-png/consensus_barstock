@@ -7,19 +7,115 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- ===== ÉCRAN AUTH ===== -->
+<div id="ecran-auth" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:linear-gradient(135deg,#1b5e20,#2e7d32); padding:20px;">
+  <div style="background:white; border-radius:16px; padding:36px; width:100%; max-width:400px; box-shadow:0 12px 40px rgba(0,0,0,0.3);">
+
+    <!-- Logo -->
+    <div style="text-align:center; margin-bottom:24px;">
+      <div style="font-size:48px;">🍺</div>
+      <h1 style="color:#2e7d32; margin:6px 0 4px; font-size:22px;">Consensus BarStock</h1>
+      <p style="color:#888; font-size:13px; margin:0;">Gestion de stock pour bars</p>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex; border-bottom:2px solid #eee; margin-bottom:22px;">
+      <button id="tab-connexion" class="tab-active" onclick="afficherOngletAuth('connexion')"
+        style="flex:1; border:none; background:none; padding:10px; font-size:14px; font-weight:700; cursor:pointer; color:#2e7d32; border-bottom:3px solid #2e7d32; margin-bottom:-2px;">
+        🔓 Se connecter
+      </button>
+      <button id="tab-inscription" onclick="afficherOngletAuth('inscription')"
+        style="flex:1; border:none; background:none; padding:10px; font-size:14px; font-weight:700; cursor:pointer; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px;">
+        ✨ Nouveau bar
+      </button>
+    </div>
+
+    <!-- PANEL CONNEXION -->
+    <div id="panel-connexion">
+      <p style="font-size:13px; color:#666; margin-bottom:16px; text-align:center;">
+        Entrez votre code PIN pour accéder à votre bar
+      </p>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div style="position:relative;">
+          <input type="password" id="conn-pin" placeholder="Code PIN (4-6 chiffres)"
+            style="width:100%; padding:13px 44px 13px 14px; border:2px solid #ddd; border-radius:10px; font-size:18px; letter-spacing:6px; text-align:center; box-sizing:border-box;"
+            maxlength="6" inputmode="numeric">
+          <button onclick="toggleVoirPin('conn-pin')"
+            style="position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:18px;">👁️</button>
+        </div>
+        <button id="btn-connexion" onclick="seConnecter()"
+          style="background:#2e7d32; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; font-weight:bold; cursor:pointer; transition:0.2s;">
+          🔓 Se connecter
+        </button>
+      </div>
+    </div>
+
+    <!-- PANEL INSCRIPTION -->
+    <div id="panel-inscription" style="display:none;">
+      <p style="font-size:13px; color:#666; margin-bottom:16px; text-align:center;">
+        Créez votre compte bar en 30 secondes
+      </p>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <input type="text" id="ins-nom" placeholder="Nom de votre bar (ex: Bar Chez Maman)"
+          style="padding:12px; border:2px solid #ddd; border-radius:10px; font-size:14px; box-sizing:border-box; width:100%;">
+
+        <div style="position:relative;">
+          <input type="password" id="ins-pin" placeholder="Choisir un code PIN (4-6 chiffres)"
+            style="width:100%; padding:12px 44px 12px 12px; border:2px solid #ddd; border-radius:10px; font-size:16px; letter-spacing:4px; text-align:center; box-sizing:border-box;"
+            maxlength="6" inputmode="numeric">
+          <button onclick="toggleVoirPin('ins-pin')"
+            style="position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+        </div>
+
+        <button onclick="genererPin()"
+          style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; padding:8px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+          🎲 Générer un PIN aléatoire
+        </button>
+
+        <!-- Aperçu PIN généré -->
+        <div id="pin-preview" style="display:none; background:#fff3e0; border:2px dashed #ef6c00; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:11px; color:#888; margin-bottom:4px;">PIN généré :</div>
+          <div style="font-size:28px; font-weight:bold; letter-spacing:6px; color:#e65100;"></div>
+          <div style="font-size:11px; color:#ef6c00; margin-top:4px;">⚠️ Notez-le maintenant !</div>
+        </div>
+
+        <input type="password" id="ins-pin-confirm" placeholder="Confirmer le PIN"
+          style="padding:12px; border:2px solid #ddd; border-radius:10px; font-size:16px; letter-spacing:4px; text-align:center; box-sizing:border-box; width:100%;"
+          maxlength="6" inputmode="numeric">
+
+        <button id="btn-inscription" onclick="inscrireBar()"
+          style="background:#2e7d32; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; font-weight:bold; cursor:pointer;">
+          ✅ Créer mon compte
+        </button>
+      </div>
+    </div>
+
+    <!-- Erreur -->
+    <div id="auth-erreur" style="display:none; background:#ffebee; color:#c62828; padding:10px 14px; border-radius:8px; font-size:13px; margin-top:14px; text-align:center;"></div>
+
+  </div>
+</div>
+  
 
   
 
 <!-- Bannière hors-ligne -->
-<div id="offline-banner">📡 Connexion perdue — Reconnectez-vous pour synchroniser.</div>
-<div id="entete-fixe">
-<!-- Header -->
-<header>
-  <span>🍺 Consensus BarStock</span>
-  <div class="header-right">
-    <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
-  </div>
-</header>
+<div id="app-principale" style="display:none;">
+
+  <div id="offline-banner">📡 Connexion perdue — Reconnectez-vous pour synchroniser.</div>
+
+  <div id="entete-fixe">
+    <header>
+      <span id="nom-bar-actuel">🍺 Consensus BarStock</span>
+      <div class="header-right">
+        <button onclick="seDeconnecter()"
+          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
+          🚪 Déconnexion
+        </button>
+        <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
+      </div>
+    </header>
+
 
 
 <!-- Stats du jour -->
@@ -37,6 +133,7 @@
   <button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')">🔄 Stockage / Récup</button>
   <button class="nav-btn" data-section="ventes" onclick="showSection('ventes')">💰 Caisse Ventes</button>
   <button class="nav-btn" data-section="historique" onclick="showSection('historique')">📋 Historique</button>
+<button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')">🗑️ Corbeille</button>
 </nav>
 </div>
 <!-- MODAL CONFIRMATION VENTE -->
@@ -319,6 +416,35 @@
   </div><!-- fin historique -->
 
 </div><!-- fin container -->
+
+
+
+<!-- Nouvelle section -->
+<div id="corbeille" class="section">
+  <div class="card">
+    <div class="card-header" style="background:#c62828;">
+      <h3>🗑️ Corbeille — Boissons supprimées</h3>
+    </div>
+    <p style="font-size:13px; color:#888; margin-bottom:14px;">
+      Les boissons ici peuvent être restaurées ou supprimées définitivement.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Désignation</th>
+          <th>Type</th>
+          <th>Catégorie</th>
+          <th>Supprimé le</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="corbeille-rows"></tbody>
+    </table>
+    <div class="btn-group" style="margin-top:14px;">
+      <button class="btn btn-danger" onclick="viderCorbeille()">🗑️ Vider la corbeille</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
