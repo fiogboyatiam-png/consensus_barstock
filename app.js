@@ -16,7 +16,10 @@ let modeStockage = 'appro';
 let graphiqueInstance = null;
 let commandeEnCours = []; // [{ designation, type, qte, cout }]
 let barActuel = null; // { id, nom, code_pin }
-
+let commandeActive = null; // commande en cours d'edition
+let commandesOuvertes = []; // liste des commandes chargees
+let realtimeActif = false;
+let utilisateurActuel = null;
 
 // ==================== UTILITAIRES ====================
 function formatPrix(val) {
@@ -259,13 +262,8 @@ async function restaurerSession() {
 function lancerApplication() {
   const expiration = Date.now() + (8 * 60 * 60 * 1000);
   localStorage.setItem('barstock_expiration', expiration.toString());
-  document.getElementById('ecran-auth').style.display = 'none';
-  document.getElementById('app-principale').style.display = 'block';
-  const nomEl = document.getElementById('nom-bar-actuel');
-  if (nomEl) nomEl.innerText = 'Consensus BarStock - ' + barActuel.nom;
-  initialiserApplication();
+  afficherEcranRole(); // ← passe par le choix de rôle
 }
-
 async function seDeconnecter() {
   if (!confirm(`Deconnecter ${barActuel?.nom} ?`)) return;
   await client.auth.signOut();
@@ -274,6 +272,8 @@ async function seDeconnecter() {
   localStorage.removeItem('barstock_bar_nom');
   localStorage.removeItem('barstock_expiration');
   boissons = []; panier = {}; historique = [];
+  client.removeAllChannels();
+realtimeActif = false;
   afficherEcranAuth();
 }
 
@@ -316,12 +316,15 @@ async function initialiserApplication() {
 
     mettreAJourStatsDuJour();
     rafrachirVueActive();
+    await chargerCommandes();    
+    
   } catch(err) {
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     console.error(err); // seulement en dev
   }
   toast('❌ Une erreur est survenue.', 'error');
 }
+
 }
 
 // ==================== STATS DU JOUR ====================
@@ -349,10 +352,16 @@ function rafrachirVueActive() {
   const sec = document.querySelector('.section.active');
   if (!sec) return;
   const id = sec.id;
-  if (id === 'catalogue') { afficherCatalogue(); statsCatalogue(); }
+  if (id === 'catalogue') { afficherCatalogue(); statsCatalogue(); if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
+ }
   else if (id === 'etat-stock') afficherEtatProduits();
+  afficherEtatProduits();
+  if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
+
   else if (id === 'stockage-recup') afficherStockage();
   else if (id === 'ventes') { afficherVentes(); mettreAJourTicket(); afficherDerniereVente(); }
+  else if (id === 'commandes') chargerCommandes();
+  else if (id === 'rapport-serveuses') chargerRapportServeuses();
   else if (id === 'historique') { afficherHistorique(); chargerEspaceFournisseur(); dessinerGraphique(); }
 }
 
@@ -362,6 +371,8 @@ function showSection(id) {
   const sec = document.getElementById(id); if (sec) sec.classList.add('active');
   const btn = document.querySelector(`[data-section="${id}"]`); if (btn) btn.classList.add('active');
   if (id === 'corbeille') chargerCorbeille();
+  else if (id === 'commandes') chargerCommandes();
+  else if (id === 'rapport-serveuses') chargerRapportServeuses();
   else rafrachirVueActive();
 }
 
@@ -530,6 +541,55 @@ async function viderCorbeille() {
     toast('🗑️ Corbeille vidée', 'warning');
     chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
+}
+function activerRealtime() {
+  if (realtimeActif) return; 
+  realtimeActif = true;
+  // Écoute les changements de stock
+  client.channel('stock-live')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'boissons',
+      filter: `bar_id=eq.${barActuel.id}`
+    }, payload => {
+      // Met à jour la boisson localement sans recharger toute la page
+      const index = boissons.findIndex(b => b.id === payload.new.id);
+      if (payload.eventType === 'UPDATE' && index !== -1) {
+        boissons[index] = { ...boissons[index], ...payload.new };
+        rafrachirVueActive();
+      }
+    })
+    .subscribe();
+
+  // Écoute les nouvelles commandes et modifications
+  client.channel('commandes-live')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'commandes',
+      filter: `bar_id=eq.${barActuel.id}`
+    }, payload => {
+      chargerCommandes(); // recharge la liste des tables
+    })
+    .subscribe();
+
+  // Écoute les nouvelles ventes (pour l'historique et les stats)
+  client.channel('ventes-live')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'ventes',
+      filter: `bar_id=eq.${barActuel.id}`
+    }, payload => {
+      // Recharge l'historique si la section est active
+      if (document.getElementById('historique')?.classList.contains('active')) {
+        afficherHistorique();
+      }
+      // Met à jour les stats du jour dans le header
+      mettreAJourStatsDuJour();
+    })
+    .subscribe();
 }
 
 // ==================== ÉTAT STOCK ====================
@@ -701,28 +761,30 @@ function saisirQuantiteDirecte(id, valeur, stockDispo) {
 }
 
 function mettreAJourTicket() {
-  const detail = document.getElementById('ticket-detail'); if (!detail) return;
-  if (Object.keys(panier).length===0) {
-    detail.innerHTML='<p class="vide">Ticket de caisse vide</p>';
-    ['total-montant','recap-bbc','recap-benef'].forEach(id => { const el=document.getElementById(id); if(el) el.innerText='0 FCFA'; });
+  const detail = document.getElementById('ticket-detail');
+  const wrapper = document.getElementById('btn-envoyer-table-wrapper');
+  if (!detail) return;
+  if (Object.keys(panier).length === 0) {
+    detail.innerHTML = '<li style="color:#aaa;padding:10px 0;text-align:center;">Panier vide</li>';
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+    set('total-montant', formatPrix(0)); set('recap-bbc', formatPrix(0)); set('recap-benef', formatPrix(0));
+    if (wrapper) wrapper.style.display = 'none';
     return;
   }
-  let tv=0, ta=0, html='<ul style="list-style:none;padding:0;margin:0;">';
- /* for (const id in panier) {
-    const b = boissons.find(i => i.id==id); if (!b) continue;
-    const qte=panier[id], sous=b.prix_unitaire*qte; tv+=sous;
-    const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
-    ta+=(b.pu_initial>0?Math.round(b.pu_initial/qpc):0)*qte;
-    html+=`<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd;font-size:14px;"><span><strong>${b.designation}</strong> × ${qte}</span><span>${formatPrix(sous)}</span></li>`;
-    function td(val) { return `<td>${escape(String(val || ''))}</td>`; }
-    
-  }*/
-  html+='</ul>';
-  detail.innerHTML=html;
-  const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.innerText=val; };
-  set('total-montant',formatPrix(tv)); set('recap-bbc',formatPrix(ta)); set('recap-benef',formatPrix(tv-ta));
+  let tv = 0, ta = 0, html = '<ul style="list-style:none;padding:0;margin:0;">';
+  for (const id in panier) {
+    const b = boissons.find(i => i.id == id); if (!b) continue;
+    const qte = panier[id], sous = b.prix_unitaire * qte; tv += sous;
+    const qpc = b.quantite_par_cassier || (b.type_bouteille === "petit bouteille" ? 24 : 12);
+    ta += (b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0) * qte;
+    html += `<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd;font-size:14px;"><span><strong>${b.designation}</strong> × ${qte}</span><span>${formatPrix(sous)}</span></li>`;
+  }
+  html += '</ul>';
+  detail.innerHTML = html;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+  set('total-montant', formatPrix(tv)); set('recap-bbc', formatPrix(ta)); set('recap-benef', formatPrix(tv - ta));
+  if (wrapper) wrapper.style.display = (Object.keys(panier).length > 0 && commandesOuvertes.length > 0) ? 'block' : 'none';
 }
-
 function afficherDerniereVente() {
   const el = document.getElementById('derniere-vente-info'); if (!el) return;
   const vr = historique.filter(v => !estSpecial(v));
@@ -757,38 +819,25 @@ async function confirmerVenteFinale() {
   fermerModalVente();
   await validerVente(note);
 }
-async function validerEncaissement() {
-  const note = document.getElementById('note-encaissement').value;
-  
-  // Confirmation simple via alert ou modal personnalisé
-  const confirmation = confirm(`Voulez-vous valider cet encaissement ?\nNote : ${note || 'Aucune note'}`);
-  
-  if (confirmation) {
-    // Supposons que vous ayez un objet 'donneesEncaissement'
-    const payload = {
-      montant: totalActuel, // Votre variable de montant
-      note: note,           // On ajoute la note ici
-      date: new Date().toISOString(),
-      bar_id: barActuel.id
-    };
 
-    // Envoi vers Supabase
-    const { data, error } = await client
-      .from('historique_encaissements')
-      .insert([payload]);
-
-    if (!error) {
-      alert("Encaissement validé avec succès !");
-      // Réinitialiser le champ
-      document.getElementById('note-encaissement').value = '';
-    } else {
-      console.error("Erreur Supabase :", error);
-    }
-  }
-}
 
 async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
+  // Vérification stock en temps réel avant encaissement
+  const ids = Object.keys(panier).map(Number);
+  const { data: stockFrais } = await client.from('boissons')
+    .select('id, stock, designation')
+    .in('id', ids)
+    .eq('bar_id', barActuel.id);
+
+  for (const b of stockFrais || []) {
+    const qte = panier[b.id];
+    if (qte > b.stock) {
+      toast(`❌ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'error');
+      await initialiserApplication(); // recharge les vrais stocks
+      return;
+    }
+  }
   let tv=0, tb=0; const arts=[];
   for (const id in panier) {
     const qte=panier[id], b=boissons.find(i=>i.id==id); if (!b) continue;
@@ -799,7 +848,11 @@ async function validerVente(note = '') {
   }
   try {
     const { data: tr, error } = await client.from('ventes')
-      .insert([{ total:tv, benefice:tb, benef:tb, bar_id:barActuel.id, note: note || null }])
+  .insert([{
+    total:tv, benefice:tb, benef:tb, bar_id:barActuel.id,
+    note: note || null,
+    serveuse: utilisateurActuel?.nom || null
+  }])
       .select().single();
     if (error) throw error;
     for (const art of arts) {
@@ -1280,7 +1333,333 @@ function envoyerWhatsAppFournisseur() {
   const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n💳 Paiements :\n${paies}\n\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 }
+// ── COMMANDES ──────────────────────────────────────────────────
 
+async function ouvrirNouvelleCommande() {
+  const table = document.getElementById('cmd-table')?.value.trim();
+  const clientNom = document.getElementById('cmd-client')?.value.trim();
+  if (!table) { toast('⚠️ Indique un numéro de table', 'warning'); return; }
+
+  const { data, error } = await client.from('commandes').insert([{
+    bar_id: barActuel.id,
+    table_num: table,
+    client_nom: clientNom || null,
+    statut: 'ouverte',
+    articles: [],
+    total: 0
+  }]).select().single();
+
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  document.getElementById('cmd-table').value = '';
+  document.getElementById('cmd-client').value = '';
+  toast('✅ Commande ouverte — ' + table);
+  await chargerCommandes();
+  ouvrirModalCommande(data);
+}
+
+async function chargerCommandes() {
+  const { data, error } = await client.from('commandes')
+    .select('*')
+    .eq('bar_id', barActuel.id)
+    .eq('statut', 'ouverte')
+    .order('created_at', { ascending: true });
+
+  if (error) { console.error(error); return; }
+  commandesOuvertes = data || [];
+  afficherCommandes();
+}
+
+function afficherCommandes() {
+  const div = document.getElementById('commandes-liste');
+  if (!div) return;
+
+  if (commandesOuvertes.length === 0) {
+    div.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune commande ouverte</div>';
+    return;
+  }
+
+  div.innerHTML = commandesOuvertes.map(cmd => {
+    const articles = cmd.articles || [];
+    const duree = dureeDepuis(cmd.created_at);
+    const detail = articles.length > 0
+      ? articles.map(a => `${a.designation} x${a.qte}`).join(', ')
+      : 'Aucun article';
+    const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+
+    return `<div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div>
+          <span style="font-weight:700;font-size:15px;">${label}</span>
+          <span style="margin-left:10px;font-size:12px;color:#888;">⏱️ ${duree}</span>
+        </div>
+        <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
+      </div>
+      <div style="font-size:13px;color:#555;margin-bottom:10px;">${detail}</div>
+      ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${cmd.note}</div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">✏️ Modifier</button>
+        <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId(${cmd.id})">✅ Encaisser</button>
+        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+  mettreAJourBadgeCommandes();
+}
+
+function dureeDepuis(created_at) {
+  const diff = Math.floor((Date.now() - new Date(created_at)) / 1000);
+  if (diff < 60) return diff + 's';
+  if (diff < 3600) return Math.floor(diff / 60) + ' min';
+  return Math.floor(diff / 3600) + 'h ' + Math.floor((diff % 3600) / 60) + 'min';
+}
+
+function ouvrirModalCommande(cmd) {
+  commandeActive = cmd;
+  const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+  document.getElementById('modal-cmd-titre').textContent = '🧾 ' + label;
+  document.getElementById('modal-cmd-note').value = cmd.note || '';
+  afficherArticlesCommande();
+  afficherBoissonsCommande('');
+  document.getElementById('modal-commande').classList.add('visible');
+}
+
+function fermerModalCommande() {
+  document.getElementById('modal-commande').classList.remove('visible');
+  commandeActive = null;
+}
+
+function afficherArticlesCommande() {
+  const div = document.getElementById('modal-cmd-articles');
+  if (!div || !commandeActive) return;
+  const articles = commandeActive.articles || [];
+  if (articles.length === 0) {
+    div.innerHTML = '<div style="color:#aaa;font-size:13px;margin-bottom:8px;">Aucun article ajouté</div>';
+    return;
+  }
+  const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+  div.innerHTML = `
+    <div style="background:#f9f9f9;border-radius:6px;padding:10px;margin-bottom:10px;">
+      ${articles.map((a, i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span style="font-size:13px;">${a.designation} × ${a.qte}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span>
+            <button onclick="retirerArticleCommande(${i})"
+              style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button>
+          </div>
+        </div>`).join('')}
+      <div style="border-top:1px solid #ddd;margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;">
+        <span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span>
+      </div>
+    </div>`;
+}
+
+function filtrerBoissonsCommande() {
+  const q = document.getElementById('modal-cmd-search')?.value || '';
+  afficherBoissonsCommande(q);
+}
+
+function afficherBoissonsCommande(recherche) {
+  const div = document.getElementById('modal-cmd-boissons');
+  if (!div) return;
+  const terme = recherche.toLowerCase();
+  const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme));
+  if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
+  div.innerHTML = fil.map(b => `
+    <button onclick="ajouterArticleCommande(${b.id})"
+      style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:6px;padding:8px;text-align:left;cursor:pointer;font-size:12px;">
+      <div style="font-weight:600;">${b.designation}</div>
+      <div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div>
+      <div style="color:#888;">Stock: ${b.stock}</div>
+    </button>`).join('');
+}
+
+function ajouterArticleCommande(id) {
+  if (!commandeActive) return;
+  const b = boissons.find(i => i.id === id);
+  if (!b) return;
+  const articles = commandeActive.articles || [];
+  const existe = articles.find(a => a.id === id);
+  if (existe) {
+    existe.qte += 1;
+  } else {
+    articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 });
+  }
+  commandeActive.articles = articles;
+  commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+  afficherArticlesCommande();
+}
+
+function retirerArticleCommande(index) {
+  if (!commandeActive) return;
+  const articles = commandeActive.articles || [];
+  if (articles[index].qte > 1) {
+    articles[index].qte -= 1;
+  } else {
+    articles.splice(index, 1);
+  }
+  commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+  afficherArticlesCommande();
+}
+
+async function sauvegarderCommande() {
+  if (!commandeActive) return;
+  const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
+  const { error } = await client.from('commandes').update({
+    articles: commandeActive.articles,
+    total: commandeActive.total,
+    note
+  }).eq('id', commandeActive.id);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+  toast('💾 Commande sauvegardée !');
+  await chargerCommandes();
+}
+
+async function encaisserCommandeId(id) {
+  const cmd = commandesOuvertes.find(c => c.id === id);
+  if (cmd) { commandeActive = cmd; await encaisserCommande(); }
+}
+
+async function encaisserCommande() {
+  if (!commandeActive) return;
+  await sauvegarderCommande();
+  const cmd = commandeActive;
+  if (!cmd.articles || cmd.articles.length === 0) {
+    toast('⚠️ Aucun article dans la commande', 'warning'); return;
+  }
+
+   // Vérification stock frais
+  const ids = cmd.articles.map(a => a.id);
+  const { data: stockFrais } = await client.from('boissons')
+    .select('id, stock, designation')
+    .in('id', ids)
+    .eq('bar_id', barActuel.id);
+
+  for (const a of cmd.articles) {
+    const bFrais = stockFrais?.find(b => b.id === a.id);
+    if (bFrais && a.qte > bFrais.stock) {
+      toast(`❌ Stock insuffisant pour ${bFrais.designation} (reste ${bFrais.stock})`, 'error');
+      await initialiserApplication();
+      return;
+    }
+  }
+  // Calcul bénéfice
+  let total = 0, benef = 0;
+  for (const a of cmd.articles) {
+    const b = boissons.find(i => i.id === a.id);
+    if (!b) continue;
+    const qpc = b.quantite_par_cassier || (b.type_bouteille === 'petit bouteille' ? 24 : 12);
+    const achat = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
+    total += a.prix * a.qte;
+    benef += (a.prix - achat) * a.qte;
+  }
+
+  const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+  const note = (document.getElementById('modal-cmd-note')?.value.trim()) || label;
+
+  try {
+    // Insérer dans ventes
+    const { data: vente, error: eV } = await client.from('ventes').insert([{
+  bar_id: barActuel.id, total, benefice: benef, benef, note,
+  serveuse: utilisateurActuel?.nom || null
+}]).select().single();
+    if (eV) throw eV;
+
+    // Insérer les articles + décrémenter stock
+    for (const a of cmd.articles) {
+      await client.from('vente_articles').insert([{
+        vente_id: vente.id, bar_id: barActuel.id,
+        boisson_designation: a.designation,
+        quantite: a.qte, prix_unitaire: a.prix
+      }]);
+      const b = boissons.find(i => i.id === a.id);
+      if (b) await client.from('boissons')
+        .update({ stock: b.stock - a.qte })
+        .eq('id', a.id).eq('bar_id', barActuel.id);
+    }
+
+    // Fermer la commande
+    await client.from('commandes').update({ statut: 'payee' }).eq('id', cmd.id);
+
+    fermerModalCommande();
+    toast('✅ Commande encaissée — ' + formatPrix(total));
+    await initialiserApplication();
+    await chargerCommandes();
+  } catch (err) { toast('❌ ' + err.message, 'error'); }
+}
+
+async function annulerCommande(id) {
+  if (!confirm('Annuler cette commande ?')) return;
+  const { error } = await client.from('commandes')
+    .update({ statut: 'annulee' }).eq('id', id);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+  toast('🗑️ Commande annulée');
+  await chargerCommandes();
+}
+
+function mettreAJourBadgeCommandes() {
+  const badge = document.getElementById('badge-commandes');
+  if (!badge) return;
+  const nb = commandesOuvertes.length;
+  if (nb === 0) {
+    badge.style.display = 'none';
+  } else {
+    badge.style.display = 'inline';
+    badge.textContent = nb;
+  }
+}
+function ouvrirModalEnvoyerTable() {
+  if (Object.keys(panier).length === 0) { toast('⚠️ Panier vide !', 'warning'); return; }
+  if (commandesOuvertes.length === 0) { toast('⚠️ Aucune table ouverte', 'warning'); return; }
+
+  const div = document.getElementById('modal-tables-liste');
+  if (div) {
+    div.innerHTML = commandesOuvertes.map(cmd => {
+      const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+      const nb = (cmd.articles || []).reduce((s, a) => s + a.qte, 0);
+      return `<button onclick="envoyerPanierVersTable(${cmd.id})"
+        style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:14px;">
+        <strong>${label}</strong>
+        <span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span>
+      </button>`;
+    }).join('');
+  }
+  document.getElementById('modal-choisir-table').classList.add('visible');
+}
+
+function fermerModalTable() {
+  document.getElementById('modal-choisir-table').classList.remove('visible');
+}
+
+async function envoyerPanierVersTable(cmdId) {
+  const cmd = commandesOuvertes.find(c => c.id === cmdId);
+  if (!cmd) return;
+
+  const articles = [...(cmd.articles || [])];
+
+  for (const id in panier) {
+    const b = boissons.find(i => i.id == id);
+    if (!b) continue;
+    const existe = articles.find(a => a.id == id);
+    if (existe) {
+      existe.qte += panier[id];
+    } else {
+      articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: panier[id] });
+    }
+  }
+
+  const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
+  const { error } = await client.from('commandes').update({ articles, total }).eq('id', cmdId);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  fermerModalTable();
+  panier = {};
+  mettreAJourTicket();
+  toast('✅ Articles ajoutés à la table !');
+  await chargerCommandes();
+}
 // ==================== DÉMARRAGE ====================
 document.addEventListener("DOMContentLoaded", () => {
   appliquerDarkMode();
@@ -1294,7 +1673,290 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); });
   });
   if (insConfirm) insConfirm.addEventListener('keydown', e => { if (e.key === 'Enter') inscrireBar(); });
+  setInterval(() => {
+  if (document.getElementById('commandes')?.classList.contains('active')) {
+    afficherCommandes();
+  }
+}, 30000); // rafraichit toutes les 30 secondes
   restaurerSession();
 });
 
 
+// ── RÔLES & SERVEUSES ─────────────────────────────────────────
+
+function afficherEcranRole() {
+  document.getElementById('ecran-auth').style.display = 'none';
+  document.getElementById('app-principale').style.display = 'none';
+  document.getElementById('ecran-role').style.display = 'flex';
+  const el = document.getElementById('role-bar-nom');
+  if (el) el.textContent = barActuel.nom;
+}
+
+function connexionGerant() {
+  document.getElementById('panel-gerant').style.display = 'block';
+  document.getElementById('panel-serveuse').style.display = 'none';
+  setTimeout(() => document.getElementById('input-pin-gerant')?.focus(), 100);
+}
+
+async function validerPinGerant() {
+  const pin = document.getElementById('input-pin-gerant')?.value;
+  const errEl = document.getElementById('erreur-pin-gerant');
+
+  // Lire le PIN gérant depuis config
+  const { data } = await client.from('config')
+    .select('valeur').eq('cle', 'pin_gerant').eq('bar_id', barActuel.id).single();
+
+  const pinStocke = data?.valeur;
+
+  if (!pinStocke) {
+    // Pas encore de PIN — première fois, on le définit
+    if (!pin || pin.length < 4) { if(errEl){errEl.textContent='PIN trop court (4 min)';errEl.style.display='block';} return; }
+    await client.from('config').insert([{ bar_id: barActuel.id, cle: 'pin_gerant', valeur: pin }]);
+    toast('✅ PIN gérant défini !');
+  } else if (pin !== pinStocke) {
+    if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
+    document.getElementById('input-pin-gerant').value = '';
+    return;
+  }
+
+  utilisateurActuel = { nom: 'Gérant', role: 'gerant' };
+  document.getElementById('input-pin-gerant').value = '';
+  if (errEl) errEl.style.display = 'none';
+  lancerApplicationAvecRole();
+}
+
+async function afficherChoixServeuse() {
+  document.getElementById('panel-serveuse').style.display = 'block';
+  document.getElementById('panel-gerant').style.display = 'none';
+  document.getElementById('panel-pin-serveuse').style.display = 'none';
+
+  const { data: serveuses } = await client.from('serveuses')
+    .select('id, nom').eq('bar_id', barActuel.id).order('nom');
+
+  const div = document.getElementById('liste-serveuses');
+  if (!div) return;
+  if (!serveuses || serveuses.length === 0) {
+    div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
+    return;
+  }
+  div.innerHTML = serveuses.map(s => `
+    <button onclick="selectionnerServeuse(${s.id}, '${s.nom}')"
+      style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;
+             text-align:left;cursor:pointer;font-size:15px;font-weight:600;">
+      👤 ${s.nom}
+    </button>`).join('');
+}
+
+let serveuseSelectionnee = null;
+function selectionnerServeuse(id, nom) {
+  serveuseSelectionnee = { id, nom };
+  document.getElementById('panel-pin-serveuse').style.display = 'block';
+  setTimeout(() => document.getElementById('input-pin-serveuse')?.focus(), 100);
+}
+
+async function validerPinServeuse() {
+  if (!serveuseSelectionnee) return;
+  const pin = document.getElementById('input-pin-serveuse')?.value;
+  const errEl = document.getElementById('erreur-pin-serveuse');
+
+  const { data } = await client.from('serveuses')
+    .select('code_pin').eq('id', serveuseSelectionnee.id).single();
+
+  if (!data || pin !== data.code_pin) {
+    if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
+    document.getElementById('input-pin-serveuse').value = '';
+    return;
+  }
+
+  utilisateurActuel = { nom: serveuseSelectionnee.nom, role: 'serveuse' };
+  document.getElementById('input-pin-serveuse').value = '';
+  serveuseSelectionnee = null;
+  if (errEl) errEl.style.display = 'none';
+  lancerApplicationAvecRole();
+}
+
+function lancerApplicationAvecRole() {
+  document.getElementById('ecran-role').style.display = 'none';
+  document.getElementById('app-principale').style.display = 'block';
+  const nomEl = document.getElementById('nom-bar-actuel');
+  if (nomEl) nomEl.innerText = `Consensus BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
+  appliquerRestrictions();
+  initialiserApplication();
+  activerRealtime();
+}
+
+function appliquerRestrictions() {
+  const estGerant = utilisateurActuel?.role === 'gerant';
+
+  // Cacher les sections réservées au gérant
+  const sectionsGerant = ['etat-stock', 'stockage-recup', 'historique', 'corbeille'];
+  sectionsGerant.forEach(id => {
+    const btn = document.querySelector(`[data-section="${id}"]`);
+    if (btn) btn.style.display = estGerant ? '' : 'none';
+  });
+
+  // Cacher les éléments .gerant-only
+  document.querySelectorAll('.gerant-only').forEach(el => {
+    el.style.display = estGerant ? '' : 'none';
+  });
+
+  // Si serveuse, forcer la section caisse
+  if (!estGerant) showSection('ventes');
+}
+
+// ── GESTION SERVEUSES (interface gérant) ──────────────────────
+
+async function ajouterServeuse() {
+  const nom = document.getElementById('srv-nom')?.value.trim();
+  const pin = document.getElementById('srv-pin')?.value.trim();
+  if (!nom) { toast('⚠️ Nom obligatoire', 'warning'); return; }
+  if (!pin || pin.length < 4) { toast('⚠️ PIN trop court (4 min)', 'warning'); return; }
+
+  const { error } = await client.from('serveuses')
+    .insert([{ bar_id: barActuel.id, nom, code_pin: pin }]);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  document.getElementById('srv-nom').value = '';
+  document.getElementById('srv-pin').value = '';
+  toast('✅ Serveuse ajoutée !');
+  chargerListeServeuses();
+}
+
+async function chargerListeServeuses() {
+  const { data } = await client.from('serveuses')
+    .select('*').eq('bar_id', barActuel.id).order('nom');
+  const div = document.getElementById('liste-serveuses-gestion');
+  if (!div) return;
+  if (!data || data.length === 0) {
+    div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>';
+    return;
+  }
+  div.innerHTML = data.map(s => `
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
+      <span style="font-weight:600;">👤 ${escape(s.nom)}</span>
+      <button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button>
+    </div>`).join('');
+}
+async function chargerRapportServeuses() {
+  const periode = document.getElementById('rapport-periode')?.value || 'today';
+
+  // Calcul de la date de début selon la période
+  const maintenant = new Date();
+  let dateDebut = null;
+  if (periode === 'today') {
+    dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
+  } else if (periode === 'week') {
+    dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (periode === 'month') {
+    dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
+  }
+
+  // Charger les ventes
+  let query = client.from('ventes')
+    .select('id, total, benef, serveuse, created_at, vente_articles(boisson_designation, quantite)')
+    .eq('bar_id', barActuel.id)
+    .order('created_at', { ascending: false });
+
+  if (dateDebut) query = query.gte('created_at', dateDebut);
+
+  const { data: ventes, error } = await query;
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  // Grouper par serveuse
+  const groupes = {};
+  for (const v of ventes || []) {
+    const nom = v.serveuse || 'Inconnu';
+    if (!groupes[nom]) groupes[nom] = { nom, ventes: [], total: 0, benef: 0 };
+    groupes[nom].ventes.push(v);
+    groupes[nom].total += parseInt(v.total) || 0;
+    groupes[nom].benef += parseInt(v.benef) || 0;
+  }
+
+  const liste = Object.values(groupes).sort((a, b) => b.total - a.total);
+  const totalGlobal = liste.reduce((s, g) => s + g.total, 0);
+  const benefGlobal = liste.reduce((s, g) => s + g.benef, 0);
+
+  // Stats globales
+  const statsDiv = document.getElementById('rapport-stats-globales');
+  if (statsDiv) {
+    statsDiv.innerHTML = `
+      <div class="stat-box" style="border-left-color:#1a6b3a;">
+        <div class="stat-label">Total CA période</div>
+        <div class="stat-value vert">${formatPrix(totalGlobal)}</div>
+      </div>
+      <div class="stat-box" style="border-left-color:#d4a017;">
+        <div class="stat-label">Bénéfice période</div>
+        <div class="stat-value" style="color:#d4a017;">${formatPrix(benefGlobal)}</div>
+      </div>
+      <div class="stat-box" style="border-left-color:#0288d1;">
+        <div class="stat-label">Serveuses actives</div>
+        <div class="stat-value" style="color:#0288d1;">${liste.length}</div>
+      </div>`;
+  }
+
+  // Tableau par serveuse
+  const contenu = document.getElementById('rapport-serveuses-contenu');
+  if (!contenu) return;
+
+  if (liste.length === 0) {
+    contenu.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune vente sur cette période.</div>';
+    return;
+  }
+
+  contenu.innerHTML = liste.map(g => {
+    const nbVentes = g.ventes.filter(v => {
+      const d = (v.vente_articles||[]).map(a=>a.boisson_designation||'').join(' ').toUpperCase();
+      return !d.includes('RETOUR') && !d.includes('PERTE') && !d.includes('FOURNISSEUR');
+    }).length;
+
+    return `
+    <div style="border:1px solid #ddd;border-radius:10px;margin-bottom:16px;overflow:hidden;">
+      <!-- En-tête serveuse -->
+      <div style="background:#0f3d22;color:white;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:700;font-size:15px;">👤 ${escape(g.nom)}</span>
+        <span style="font-size:13px;opacity:0.8;">${nbVentes} vente(s)</span>
+      </div>
+      <!-- Stats serveuse -->
+      <div style="display:flex;gap:0;border-bottom:1px solid #eee;">
+        <div style="flex:1;padding:12px;text-align:center;border-right:1px solid #eee;">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;">CA</div>
+          <div style="font-weight:700;color:#1a6b3a;">${formatPrix(g.total)}</div>
+        </div>
+        <div style="flex:1;padding:12px;text-align:center;">
+          <div style="font-size:11px;color:#888;text-transform:uppercase;">Bénéfice</div>
+          <div style="font-weight:700;color:#d4a017;">${formatPrix(g.benef)}</div>
+        </div>
+      </div>
+      <!-- Dernières ventes -->
+      <div style="padding:12px;">
+        <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">DERNIÈRES VENTES</div>
+        ${g.ventes.slice(0, 5).map(v => {
+          const articles = (v.vente_articles||[]).map(a => `${a.boisson_designation} ×${a.quantite}`).join(', ');
+          const date = new Date(v.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:13px;">
+            <span style="color:#555;">${date} — ${articles || '—'}</span>
+            <span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span>
+          </div>`;
+        }).join('')}
+        ${g.ventes.length > 5 ? `<div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">+ ${g.ventes.length - 5} autre(s)</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function supprimerServeuse(id) {
+  if (!confirm('Supprimer cette serveuse ?')) return;
+  await client.from('serveuses').delete().eq('id', id);
+  toast('🗑️ Serveuse supprimée');
+  chargerListeServeuses();
+}
+
+
+// Bouton changer d'utilisateur
+function changerUtilisateur() {
+  utilisateurActuel = null;
+  realtimeActif = false;
+  client.removeAllChannels();
+  afficherEcranRole();
+}
