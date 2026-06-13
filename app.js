@@ -1,8 +1,4 @@
-/*
-  app.js — Consensus BarStock v2.1
-  CSS séparé | Historique fournisseur avec livraisons
-  Séparation CA ventes / pertes / retours
-*/
+
 
 // ==================== SUPABASE ====================
 const SUPABASE_URL = "https://jwskhozdukcurjnpsgtm.supabase.co";
@@ -18,9 +14,9 @@ let filtreCatalogue = '';
 let filtreVentes = '';
 let modeStockage = 'appro';
 let graphiqueInstance = null;
-// Suivi détaillé de la commande en cours (Stockage / Récup)
 let commandeEnCours = []; // [{ designation, type, qte, cout }]
 let barActuel = null; // { id, nom, code_pin }
+
 
 // ==================== UTILITAIRES ====================
 function formatPrix(val) {
@@ -37,7 +33,9 @@ function toast(msg, type = 'success') {
   c.appendChild(t);
   setTimeout(() => t.remove(), 3300);
 }
-
+function rafraichirIcones() {
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
 function dateStr() {
   const n = new Date();
   return n.toLocaleDateString('fr-FR') + " à " + n.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
@@ -48,21 +46,8 @@ function escape(str) {
   return div.innerHTML;
 }
 
-// Hash simple du PIN (SHA-256)
-async function hashPin(pin) {
-  const msgBuffer = new TextEncoder().encode(pin);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
-// ✅ CORRECTION — rejeter les PINs trop simples
-function pinTropSimple(pin) {
-  const interdits = ['0000','1111','2222','3333','4444','5555',
-                     '6666','7777','8888','9999','1234','4321',
-                     '123456','654321','000000','111111'];
-  return interdits.includes(pin);
-}
+
 
 
 // ==================== MODE SOMBRE ====================
@@ -107,7 +92,8 @@ function afficherOngletAuth(onglet) {
     if (btn) btn.classList.toggle('tab-active', t === onglet);
     if (panel) panel.style.display = t === onglet ? 'block' : 'none';
   });
-  document.getElementById('auth-erreur').style.display = 'none';
+  const erreur = document.getElementById('auth-erreur');
+  if (erreur) erreur.style.display = 'none';
 }
 
 function afficherErreurAuth(msg) {
@@ -115,105 +101,101 @@ function afficherErreurAuth(msg) {
   if (el) { el.innerText = msg; el.style.display = 'block'; }
 }
 
-// Générer un PIN aléatoire pour l'inscription
-function genererPin() {
-  const pin = Math.floor(100000 + Math.random() * 900000).toString();
-  const el = document.getElementById('ins-pin');
-  if (el) el.value = pin;
-  // Afficher le PIN généré visuellement
-  const preview = document.getElementById('pin-preview');
-  if (preview) { preview.innerText = pin; preview.style.display = 'block'; }
-}
-
-// Afficher/masquer le PIN
 function toggleVoirPin(inputId) {
   const el = document.getElementById(inputId);
   if (!el) return;
   el.type = el.type === 'password' ? 'text' : 'password';
 }
 
+async function chargerBarUtilisateur(userId) {
+  const { data: bars, error } = await client
+    .from('bars')
+    .select('id, nom, owner_id')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (error) throw error;
+  return bars && bars.length ? bars[0] : null;
+}
+
 // CONNEXION
 async function seConnecter() {
-  const pin = (document.getElementById('conn-pin').value || '').trim();
-  if (!pin || pin.length < 4) { afficherErreurAuth('❌ Saisis ton code PIN (4-6 chiffres).'); return; }
+  const email = (document.getElementById('conn-email')?.value || '').trim();
+  const password = (document.getElementById('conn-password')?.value || '').trim();
+
+  if (!email) { afficherErreurAuth("L'email est obligatoire."); return; }
+  if (!password) { afficherErreurAuth('Le mot de passe est obligatoire.'); return; }
 
   const btnConn = document.getElementById('btn-connexion');
   if (btnConn) { btnConn.disabled = true; btnConn.innerText = 'Connexion...'; }
 
   try {
-   // ✅ APRÈS
-const { data: bars, error } = await client
-  .from('bars')
-  .select('id, nom, code_pin');
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
 
-if (error) throw error;
+    const bar = await chargerBarUtilisateur(data.user.id);
+    if (!bar) {
+      await client.auth.signOut();
+      afficherErreurAuth("Aucun bar n'est lie a ce compte.");
+      return;
+    }
 
-// Vérifier le PIN avec bcrypt pour chaque bar
-let barTrouve = null;
-for (const b of bars || []) {
-  const { data: ok } = await client.rpc('verifier_pin', { pin, hash: b.code_pin });
-  if (ok) { barTrouve = b; break; }
-}
-
-if (!barTrouve) {
-  afficherErreurAuth('❌ Code PIN incorrect. Vérifie ton code.');
-  return;
-}
-barActuel = barTrouve;
+    barActuel = bar;
     localStorage.setItem('barstock_bar_id', barActuel.id);
     localStorage.setItem('barstock_bar_nom', barActuel.nom);
     lancerApplication();
   } catch (err) {
-    afficherErreurAuth('❌ Erreur : ' + err.message);
+    afficherErreurAuth('Erreur : ' + err.message);
   } finally {
-    if (btnConn) { btnConn.disabled = false; btnConn.innerText = '🔓 Se connecter'; }
+    if (btnConn) { btnConn.disabled = false; btnConn.innerText = 'Se connecter'; }
   }
 }
 
 // INSCRIPTION
 async function inscrireBar() {
-  const nom = (document.getElementById('ins-nom').value || '').trim();
-  const pin = (document.getElementById('ins-pin').value || '').trim();
-  const confirm = (document.getElementById('ins-pin-confirm').value || '').trim();
+  const nom = (document.getElementById('ins-nom')?.value || '').trim();
+  const email = (document.getElementById('ins-email')?.value || '').trim();
+  const password = (document.getElementById('ins-password')?.value || '').trim();
+  const confirm = (document.getElementById('ins-password-confirm')?.value || '').trim();
 
-  if (!nom) { afficherErreurAuth('❌ Le nom du bar est obligatoire.'); return; }
-  if (!pin || pin.length < 4 || pin.length > 6) { afficherErreurAuth('❌ Le PIN doit avoir 4 à 6 chiffres.'); return; }
-  if (!/^\d+$/.test(pin)) { afficherErreurAuth('❌ Le PIN doit contenir uniquement des chiffres.'); return; }
-  if (pin !== confirm) { afficherErreurAuth('❌ Les deux PINs ne correspondent pas.'); return; }
-
-  if (pinTropSimple(pin)) {
-    afficherErreurAuth('❌ Ce PIN est trop simple. Choisis un code moins prévisible.');
-    return;
-  }
+  if (!nom) { afficherErreurAuth('Le nom du bar est obligatoire.'); return; }
+  if (!email) { afficherErreurAuth("L'email est obligatoire."); return; }
+  if (!password || password.length < 6) { afficherErreurAuth('Le mot de passe doit avoir au moins 6 caracteres.'); return; }
+  if (password !== confirm) { afficherErreurAuth('Les mots de passe ne correspondent pas.'); return; }
 
   const btnIns = document.getElementById('btn-inscription');
-  if (btnIns) { btnIns.disabled = true; btnIns.innerText = 'Inscription...'; }
+  if (btnIns) { btnIns.disabled = true; btnIns.innerText = 'Creation...'; }
 
   try {
-    const { data: pinHash, error: hashError } = await client.rpc('hash_pin', { pin });
-if (hashError) throw hashError;
+    const { data: authData, error: authError } = await client.auth.signUp({ email, password });
+    if (authError) throw authError;
+    if (!authData.user) throw new Error("Erreur lors de la creation du compte.");
 
-    // Vérifier si le bar existe déjà
-    const { data: existants } = await client.from('bars').select('id').eq('nom', nom);
+    const { data: existants, error: existError } = await client
+      .from('bars')
+      .select('id')
+      .eq('nom', nom);
+    if (existError) throw existError;
     if (existants && existants.length > 0) {
-      afficherErreurAuth('❌ Un bar avec ce nom existe déjà.');
+      afficherErreurAuth('Un bar avec ce nom existe deja.');
       return;
     }
 
-    const { data: nouveauBar, error } = await client
+    const { data: nouveauBar, error: barError } = await client
       .from('bars')
-      .insert([{ nom, code_pin: pinHash }])
+      .insert([{ nom, owner_id: authData.user.id }])
       .select()
       .single();
-
-    if (error) throw error;
+    if (barError) throw barError;
 
     barActuel = nouveauBar;
-    localStorage.setItem("barstock_bar_id", barActuel.id);
-    localStorage.setItem("barstock_bar_nom", barActuel.nom);
+    localStorage.setItem('barstock_bar_id', barActuel.id);
+    localStorage.setItem('barstock_bar_nom', barActuel.nom);
 
-    // Copier toutes les boissons modèles pour ce nouveau bar (stock = 0)
-    const { data: modeles } = await client.from("boissons_modele").select("*");
+    const { data: modeles, error: modelesError } = await client.from('boissons_modele').select('*');
+    if (modelesError) throw modelesError;
+
     if (modeles && modeles.length > 0) {
       const copie = modeles.map(b => ({
         designation: b.designation,
@@ -228,90 +210,74 @@ if (hashError) throw hashError;
         stock: 0,
         bar_id: nouveauBar.id
       }));
-      await client.from("boissons").insert(copie);
+      const { error: copieError } = await client.from('boissons').insert(copie);
+      if (copieError) throw copieError;
     }
 
-    // Initialiser config total_fournisseur
-    await client.from("config").insert([{ bar_id: nouveauBar.id, cle: "total_fournisseur", valeur: "0" }]);
+    const { error: configError } = await client
+      .from('config')
+      .insert([{ bar_id: nouveauBar.id, cle: 'total_fournisseur', valeur: '0' }]);
+    if (configError) throw configError;
 
-    toast("Bienvenue " + nom + " ! Votre compte est cree.");
-    afficherRecapInscription(nom, pin);
-  } catch (err) {
-    afficherErreurAuth('❌ Erreur : ' + err.message);
-  } finally {
-    if (btnIns) { btnIns.disabled = false; btnIns.innerText = '✅ Créer mon compte'; }
-  }
-}
-
-function afficherRecapInscription(nom, pin) {
-  const modal = document.getElementById('modal-confirm-vente');
-  const contenu = document.getElementById('modal-recap-contenu');
-  const titre = modal?.querySelector('.modal-title');
-  const btnConfirmer = modal?.querySelector('.modal-btns .btn:last-child');
-  const btnAnnuler = modal?.querySelector('.modal-btns .btn-danger');
-
-  if (titre) titre.innerHTML = '🎉 Compte créé avec succès !';
-  if (contenu) contenu.innerHTML = `
-    <div style="text-align:center; padding: 10px 0;">
-      <div style="font-size:15px; margin-bottom:14px; color:#333;">
-        Votre bar <strong>${escape(nom)}</strong> est enregistré.
-      </div>
-      <div style="background:#fff3e0; border:2px dashed #ef6c00; border-radius:10px; padding:18px; margin-bottom:14px;">
-        <div style="font-size:12px; color:#888; text-transform:uppercase; margin-bottom:6px;">Votre code PIN secret</div>
-        <div style="font-size:38px; font-weight:bold; letter-spacing:8px; color:#e65100;">${pin}</div>
-        <div style="font-size:11px; color:#ef6c00; margin-top:8px;">⚠️ Notez ce code — il ne sera plus affiché</div>
-      </div>
-      <div style="font-size:13px; color:#666;">Vous pouvez vous connecter à tout moment avec ce PIN.</div>
-    </div>`;
-
-  if (btnAnnuler) btnAnnuler.style.display = 'none';
-  if (btnConfirmer) {
-    btnConfirmer.innerText = '▶️ Accéder à mon bar';
-    btnConfirmer.onclick = () => { fermerModalVente(); lancerApplication(); };
-  }
-  modal?.classList.add('visible');
-}
-
-// Restaurer la session depuis localStorage
-async function restaurerSession() {
-  const barId = localStorage.getItem('barstock_bar_id');
-  const barNom = localStorage.getItem('barstock_bar_nom');
-  const expiration = localStorage.getItem('barstock_expiration');
-
-  // Vérifier expiration (8 heures)
-  if (!expiration || Date.now() > parseInt(expiration)) {
-    localStorage.clear();
-    afficherEcranAuth();
-    return;
-  }
-
-  if (!barId) { afficherEcranAuth(); return; }
-
-  try {
-    const { data: bar, error } = await client.from('bars').select('id, nom').eq('id', barId).single();
-    if (error || !bar) { localStorage.removeItem('barstock_bar_id'); afficherEcranAuth(); return; }
-    barActuel = bar;
+    toast('Bienvenue ' + nom + ' ! Votre compte est cree.');
     lancerApplication();
-  } catch { afficherEcranAuth(); }
+  } catch (err) {
+    afficherErreurAuth('Erreur : ' + err.message);
+  } finally {
+    if (btnIns) { btnIns.disabled = false; btnIns.innerText = 'Creer mon compte'; }
+  }
 }
+
+async function restaurerSession() {
+  
+  
+  try {
+     const exp = parseInt(localStorage.getItem('barstock_expiration') || '0');
+    if (exp && Date.now() > exp) {
+      await client.auth.signOut();
+      localStorage.removeItem('barstock_expiration');
+      afficherEcranAuth(); return;
+    }
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError) throw sessionError;
+
+    const session = sessionData.session;
+    if (!session) { afficherEcranAuth(); return; }
+
+    const bar = await chargerBarUtilisateur(session.user.id);
+    if (!bar) { afficherEcranAuth(); return; }
+
+    barActuel = bar;
+    localStorage.setItem('barstock_bar_id', barActuel.id);
+    localStorage.setItem('barstock_bar_nom', barActuel.nom);
+    lancerApplication();
+  } catch {
+    afficherEcranAuth();
+  }
+}
+
 function lancerApplication() {
   const expiration = Date.now() + (8 * 60 * 60 * 1000);
   localStorage.setItem('barstock_expiration', expiration.toString());
   document.getElementById('ecran-auth').style.display = 'none';
   document.getElementById('app-principale').style.display = 'block';
   const nomEl = document.getElementById('nom-bar-actuel');
-  if (nomEl) nomEl.innerText = '🍺 ' + barActuel.nom;
+  if (nomEl) nomEl.innerText = 'Consensus BarStock - ' + barActuel.nom;
   initialiserApplication();
 }
 
-function seDeconnecter() {
-  if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
+async function seDeconnecter() {
+  if (!confirm(`Deconnecter ${barActuel?.nom} ?`)) return;
+  await client.auth.signOut();
   barActuel = null;
   localStorage.removeItem('barstock_bar_id');
   localStorage.removeItem('barstock_bar_nom');
+  localStorage.removeItem('barstock_expiration');
   boissons = []; panier = {}; historique = [];
   afficherEcranAuth();
 }
+
+
 
 // ==================== INIT ====================
 async function initialiserApplication() {
@@ -327,14 +293,16 @@ async function initialiserApplication() {
 
     const { data: dv, error: eV } = await client
       .from('ventes')
-      .select('id, total, benefice, benef, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
+      .select('id, total, benefice, benef,note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
       .eq('bar_id', barActuel.id)
       .order('created_at', { ascending: false });
     if (eV) throw eV;
 
     historique = (dv || []).map(v => {
-      let dateAff = v.date;
-      if (!dateAff && v.created_at) dateAff = new Date(v.created_at).toLocaleString('fr-FR');
+      // Toujours utiliser created_at (timestamp serveur fiable)
+      let dateAff = v.created_at
+        ? new Date(v.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+        : (v.date || 'Date inconnue');
       const gain = v.benefice != null ? v.benefice : (v.benef || 0);
       let arts = (v.vente_articles || []).map(a => ({ nom: a.boisson_designation, qte: a.quantite }));
       if (arts.length === 0 && v.articles) {
@@ -343,7 +311,7 @@ async function initialiserApplication() {
           if (Array.isArray(a)) arts = a.map(x => ({ nom: x.designation || x.nom, qte: x.qte || x.quantite }));
         } catch { arts = [{ nom: "📦 PAIEMENT FOURNISSEUR", qte: 1 }]; }
       }
-      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, articles: arts };
+      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '',articles: arts };
     });
 
     mettreAJourStatsDuJour();
@@ -423,13 +391,14 @@ function afficherCatalogue() {
     const prix = `<div style="font-size:13px;">📦 1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br>🥛 ½ Cas. : ${formatPrix(b.demi_cassier || Math.round(b.pu_initial/2))}${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br>🧪 ¼ Cas. : ${formatPrix(b.quart_cassier)}`:''}</div>`;
     return `<tr><td><strong>${b.designation}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">🗑️</button></td></tr>`;
   }).join('');
+  rafraichirIcones();
 }
 
 async function modifierStock(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Stock de ${b.designation}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<0) { alert("❌ Nombre valide requis"); return; }
-  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id); if (error) throw error; toast(`✅ Stock ${b.designation} → ${n}`); await initialiserApplication(); }
+  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id);if (error) throw error; toast(`✅ Stock ${b.designation} → ${n}`); await initialiserApplication(); }
   catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -437,7 +406,7 @@ async function modifierSeuil(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Seuil d'alerte pour ${b.designation}\nActuel : ${b.seuil||6}`, b.seuil||6); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<1) { alert("❌ Seuil invalide"); return; }
-  try { const { error } = await client.from('boissons').update({ seuil: n }).eq('id', id); if (error) throw error; toast(`✅ Seuil ${b.designation} → ${n}`); await initialiserApplication(); }
+  try { const { error } = await client.from('boissons').update({ seuil: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Seuil ${b.designation} → ${n}`); await initialiserApplication(); }
   catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -469,10 +438,18 @@ async function ajouterBoisson(e) {
 }
 
 async function modifierPrixUnitaire(id) {
-  const b = boissons.find(i => i.id===id); if (!b) return;
-  const rep = prompt(`Prix vente unitaire de ${b.designation} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire); if (rep===null) return;
-  try { const { error } = await client.from('boissons').update({ prix_unitaire: parseInt(rep)||0 }).eq('id', id); if (error) throw error; toast('✅ Prix mis à jour'); await initialiserApplication(); }
-  catch (err) { toast('❌ '+err.message,'error'); }
+  const b = boissons.find(i => i.id === id);
+  if (!b) return;
+  const rep = prompt(`Prix vente unitaire de ${b.designation} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire);
+  if (rep === null) return;
+  const nouveau = parseInt(rep);
+  if (isNaN(nouveau) || nouveau < 0) { toast('❌ Prix invalide', 'error'); return; }
+  try {
+    const { error } = await client.from('boissons').update({ prix_unitaire: nouveau }).eq('id', id).eq('bar_id', barActuel.id);
+    if (error) throw error;
+    toast('✅ Prix mis à jour');
+    await initialiserApplication();
+  } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function supprimerBoisson(id) {
@@ -500,7 +477,9 @@ async function chargerCorbeille() {
 
   if (!data || data.length === 0) {
     tbody.innerHTML = '<tr><td colspan="5" class="vide">🗑️ Corbeille vide</td></tr>';
+    
     return;
+    
   }
 
   tbody.innerHTML = data.map(b => `
@@ -514,6 +493,7 @@ async function chargerCorbeille() {
         <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})" title="Supprimer définitivement">🗑️ Supprimer</button>
       </td>
     </tr>`).join('');
+    
 }
 
 async function restaurerBoisson(id) {
@@ -566,6 +546,7 @@ function afficherEtatProduits() {
     else { rs='class="row-ok;"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
     return `<tr ${rs}><td><strong>${b.designation}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
   }).join('');
+  rafraichirIcones();
 }
 function filtrerEtatStock() { afficherEtatProduits(); }
 
@@ -619,12 +600,15 @@ client.from('config').select('valeur')
       cp=`<strong>${formatPrix(b.prix_unitaire||0)}</strong> / btl`;
       ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm" style="background:#e1f5fe;color:#0288d1;border:1px solid #b3e5fc;border-radius:20px;" onclick="ajusterRetour(${b.id},1)">🔄 +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">⚠️ -1 Perte</button></div>`;
     }
-    return `<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:14px 10px;font-weight:bold;">${b.designation}</td><td style="padding:14px 10px;"><span class="tag-type">${lbl}</span></td><td style="padding:14px 10px;text-align:center;"><span style="display:inline-block;padding:6px 12px;border:1px solid #e0e0e0;border-radius:20px;font-weight:bold;">${b.stock}</span></td><td style="padding:14px 10px;font-size:13px;">${cp}</td><td style="padding:14px 10px;">${ca}</td></tr>`;
+    return `<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:14px 10px;font-weight:bold;">${escape(b.designation)}</td><td style="padding:14px 10px;"><span class="tag-type">${lbl}</span></td><td style="padding:14px 10px;text-align:center;"><span style="display:inline-block;padding:6px 12px;border:1px solid #e0e0e0;border-radius:20px;font-weight:bold;">${b.stock}</span></td><td style="padding:14px 10px;font-size:13px;">${cp}</td><td style="padding:14px 10px;">${ca}</td></tr>`;
+    rafraichirIcones();
   };
+
   let html='';
   if (grands.length>0) html+=`<tr style="background:#f8fafc;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #475569;">👑 GRANDS MODÈLES</td></tr>`+grands.map(gen).join('');
   if (petits.length>0) html+=`<tr style="background:#f0f9ff;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #0288d1;">🧪 PETITS MODÈLES</td></tr>`+petits.map(gen).join('');
   tbody.innerHTML=html;
+  rafraichirIcones();
 }
 
 async function entreeStock(id, type) {
@@ -675,7 +659,8 @@ async function ajusterRetour(id, delta) {
   if (!confirm(msg)) return;
   try {
     const { error: eS } = await client.from('boissons').update({ stock: b.stock+delta }).eq('id', id); if (eS) throw eS;
-    const { data: tr, error: eH } = await client.from('ventes').insert([{ total:tImpact, benefice:bImpact, benef:bImpact, date:dateStr() }]).select().single(); if (eH) throw eH;
+    const note = '';
+   const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note}]).select().single(); if (eH) throw eH;
     await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:typeOp, quantite:1, prix_unitaire:tImpact }]);
     toast(delta>0?'🔄 Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
     await initialiserApplication();
@@ -723,7 +708,7 @@ function mettreAJourTicket() {
     return;
   }
   let tv=0, ta=0, html='<ul style="list-style:none;padding:0;margin:0;">';
-  for (const id in panier) {
+ /* for (const id in panier) {
     const b = boissons.find(i => i.id==id); if (!b) continue;
     const qte=panier[id], sous=b.prix_unitaire*qte; tv+=sous;
     const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
@@ -731,7 +716,7 @@ function mettreAJourTicket() {
     html+=`<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd;font-size:14px;"><span><strong>${b.designation}</strong> × ${qte}</span><span>${formatPrix(sous)}</span></li>`;
     function td(val) { return `<td>${escape(String(val || ''))}</td>`; }
     
-  }
+  }*/
   html+='</ul>';
   detail.innerHTML=html;
   const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.innerText=val; };
@@ -755,7 +740,10 @@ function ouvrirModalVente() {
   }
   html+=`<div class="modal-recap-ligne"><span>TOTAL</span><span style="color:var(--primary);">${formatPrix(total)}</span></div>`;
   const c = document.getElementById('modal-recap-contenu'); if (c) c.innerHTML=html;
+  const noteEl = document.getElementById('note-vente');
+  if (noteEl) noteEl.value = '';
   document.getElementById('modal-confirm-vente').classList.add('visible');
+  setTimeout(() => noteEl?.focus(), 150);
 }
 
 function fermerModalVente() { document.getElementById('modal-confirm-vente').classList.remove('visible'); }
@@ -765,10 +753,41 @@ async function confirmerVenteFinale() {
     const b = boissons.find(i => i.id==id); if (!b) continue;
     if (panier[id]>b.stock) { fermerModalVente(); toast(`❌ Stock insuffisant pour ${b.designation} !`,'error'); await initialiserApplication(); return; }
   }
-  fermerModalVente(); await validerVente();
+  const note = (document.getElementById('note-vente')?.value || '').trim();
+  fermerModalVente();
+  await validerVente(note);
+}
+async function validerEncaissement() {
+  const note = document.getElementById('note-encaissement').value;
+  
+  // Confirmation simple via alert ou modal personnalisé
+  const confirmation = confirm(`Voulez-vous valider cet encaissement ?\nNote : ${note || 'Aucune note'}`);
+  
+  if (confirmation) {
+    // Supposons que vous ayez un objet 'donneesEncaissement'
+    const payload = {
+      montant: totalActuel, // Votre variable de montant
+      note: note,           // On ajoute la note ici
+      date: new Date().toISOString(),
+      bar_id: barActuel.id
+    };
+
+    // Envoi vers Supabase
+    const { data, error } = await client
+      .from('historique_encaissements')
+      .insert([payload]);
+
+    if (!error) {
+      alert("Encaissement validé avec succès !");
+      // Réinitialiser le champ
+      document.getElementById('note-encaissement').value = '';
+    } else {
+      console.error("Erreur Supabase :", error);
+    }
+  }
 }
 
-async function validerVente() {
+async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
   let tv=0, tb=0; const arts=[];
   for (const id in panier) {
@@ -780,21 +799,23 @@ async function validerVente() {
   }
   try {
     const { data: tr, error } = await client.from('ventes')
-      .insert([{ total:tv, benefice:tb, benef:tb, date:dateStr(), bar_id:barActuel.id }]) // ← bar_id ajouté
+      .insert([{ total:tv, benefice:tb, benef:tb, bar_id:barActuel.id, note: note || null }])
       .select().single();
     if (error) throw error;
     for (const art of arts) {
       const { error:eA } = await client.from('vente_articles').insert([{
         vente_id:tr.id, boisson_designation:art.designation,
         quantite:art.quantite, prix_unitaire:art.prix_unitaire,
-        bar_id:barActuel.id // ← bar_id ajouté
+        bar_id:barActuel.id
       }]);
       if (eA) throw eA;
       const { error:eS } = await client.from('boissons')
         .update({ stock:art.stockActuel-art.quantite })
-        .eq('id', art.id).eq('bar_id', barActuel.id); // ← bar_id ajouté
+        .eq('id', art.id).eq('bar_id', barActuel.id);
       if (eS) throw eS;
     }
+    const noteEl = document.getElementById('note-vente');
+    if (noteEl) noteEl.value = '';
     toast('✅ Vente enregistrée ! '+formatPrix(tv)); panier={};
     await initialiserApplication();
   } catch (err) { console.error(err); toast('❌ Erreur vente : '+err.message,'error'); }
@@ -815,7 +836,7 @@ async function annulerDerniereVente() {
   try {
     for (const art of v.articles||[]) {
       const b = boissons.find(i=>i.designation===art.nom);
-      if (b) await client.from('boissons').update({ stock:b.stock+art.qte }).eq('id',b.id);
+      if (b) await client.from('boissons').update({ stock:b.stock+art.qte }).eq('id',b.id).eq('bar_id', barActuel.id);
     }
     await client.from('vente_articles').delete().eq('vente_id',v.id);
     await client.from('ventes').delete().eq('id',v.id);
@@ -831,6 +852,8 @@ function reinitialiserFiltres() {
 }
 
 function afficherHistorique() {
+   
+
   // --- Séparation stricte : ventes seules vs pertes/retours ---
   const ventesSeules = historique.filter(v => !estSpecial(v));
   const pertesRetours = historique.filter(v => {
@@ -885,15 +908,17 @@ function afficherHistorique() {
     if (dU.includes('PAIEMENT FOURNISSEUR')) { badge='💳 ACHAT FOURN.'; coul='background:#fff5f5;'; }
     else if (dU.includes('RETOUR CLIENT')) { badge='🔄 RETOUR'; coul='background:#e1f5fe;'; }
     else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='⚠️ PERTE'; coul='background:#fff3e0;'; }
-    const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
+   const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
     return `<tr style="${coul}border-bottom:1px solid #eee;">
       <td style="padding:10px;font-size:13px;"><div style="font-weight:bold;">#${num} <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">${badge}</span></div><div style="margin-top:3px;color:#777;">⏱️ ${v.date}</div></td>
       <td style="padding:10px;font-size:13px;">${escape(det)}</td>
-      <td style="padding:10px;font-weight:bold;...">${formatPrix(Math.abs(total))}</td>
+      <td style="padding:10px;font-weight:bold;">${formatPrix(Math.abs(total))}</td>
       <td style="padding:10px;font-weight:bold;color:${total<0?'#c62828':'#2e7d32'};">${formatPrix(Math.abs(total))}</td>
-      <td style="padding:10px;font-weight:bold;color:${benef<0?'#c62828':'#2e7d32'};">${benef<0?'- ':'+  '}${formatPrix(Math.abs(benef))}</td>
+      <td style="padding:10px;font-weight:bold;color:${benef<0?'#c62828':'#2e7d32'};">${benef<0?'− ':'+&nbsp;'}${formatPrix(Math.abs(benef))}</td>
+      <td style="padding:10px;font-size:13px;color:#0288d1;font-style:italic;">${v.note ? '📝 '+escape(v.note) : '<span style="color:#ccc;">—</span>'}</td>
     </tr>`;
   }).join('');
+  rafraichirIcones();
 }
 
 // ==================== GRAPHIQUE ====================
@@ -938,8 +963,8 @@ async function reinitialiserVentes() {
   if (!confirm("⚠️ SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("🔴 DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
-    const { error:e1 }=await client.from('vente_articles').delete().gte('id',0);
-    const { error:e2 }=await client.from('ventes').delete().gte('id',0);
+    const { error:e1 }=await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
+    const { error:e2 }=await client.from('ventes').delete().eq('bar_id', barActuel.id);
     if (e1||e2) throw new Error((e1||e2).message);
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
@@ -948,7 +973,7 @@ async function reinitialiserVentes() {
 async function reinitialiserFournisseur() {
   if (!confirm("⚠️ Vider tout l'historique fournisseur (livraisons + paiements) ?")) return;
   try {
-    const { error:e1 }=await client.from('fournisseur_historique').delete().gte('id',0);
+    const { error:e1 }=await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
     if (e1) throw e1;
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
@@ -962,54 +987,47 @@ async function enregistrerLivraisonFournisseur() {
   if (!montant||montant<=0) { toast('❌ Montant invalide !','error'); return; }
   if (!detail) { toast('⚠️ Ajoute un détail de livraison !','warning'); return; }
   try {
-    const { error } = await client.from('fournisseur_historique').insert([{
-      type_action: 'LIVRAISON', montant, commentaire: detail, date: dateStr()
-    }]);
+    // Livraison + paiement immédiat du même montant
+    const { error } = await client.from('fournisseur_historique').insert([
+      { bar_id: barActuel.id, type_action: 'LIVRAISON', montant, commentaire: detail },
+{ bar_id: barActuel.id, type_action: 'PAIEMENT',  montant, commentaire: 'Payé à la livraison — '+detail }
+    ]);
     if (error) throw error;
     document.getElementById('fourn-montant-livraison').value='';
     document.getElementById('fourn-detail-livraison').value='';
-    toast('📦 Livraison enregistrée !'); await chargerEspaceFournisseur();
+    toast('✅ Livraison enregistrée et payée !'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function chargerEspaceFournisseur() {
-  const { data: hist, error } = await client.from('fournisseur_historique').select('*').order('created_at', { ascending:false });
+  const { data: hist, error } = await client
+    .from('fournisseur_historique')
+    .select('*')
+    .eq('bar_id', barActuel.id)
+    .order('created_at', { ascending: false });
   if (error) { console.error(error); return; }
 
-  const livraisons = (hist||[]).filter(h => h.type_action==='LIVRAISON');
-  const paiements = (hist||[]).filter(h => h.type_action!=='LIVRAISON');
+  const livraisons = (hist||[]).filter(h => h.type_action === 'LIVRAISON');
 
-  const totalLivre = livraisons.reduce((s,h)=>s+h.montant,0);
-  const totalPaye = paiements.reduce((s,h)=>s+h.montant,0);
-  const resteDu = Math.max(0, totalLivre - totalPaye);
+  const totalLivre = livraisons.reduce((s,h) => s + h.montant, 0);
+  const totalPaye  = totalLivre; // ← toujours égal au livré
 
-  const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.innerText=val; };
-  set('fourn-total-livre', formatPrix(totalLivre));
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+  set('fourn-total-livre',      formatPrix(totalLivre));
   set('fournisseur-bilan-paye', formatPrix(totalPaye));
-  set('fourn-reste-du', formatPrix(resteDu));
 
-  // Livraisons
   const tbL = document.getElementById('fourn-livraisons-rows');
   if (tbL) {
-    if (livraisons.length===0) { tbL.innerHTML='<tr><td colspan="3" class="vide">Aucune livraison enregistrée.</td></tr>'; }
-    else tbL.innerHTML = livraisons.map(h=>`
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:10px;">${h.date||'-'}</td>
-        <td style="padding:10px;color:#555;">${h.commentaire||'-'}</td>
-        <td style="padding:10px;font-weight:bold;color:#2e7d32;">${formatPrix(h.montant)}</td>
-      </tr>`).join('');
-  }
-
-  // Paiements
-  const tbP = document.getElementById('fournisseur-historique-rows');
-  if (tbP) {
-    if (paiements.length===0) { tbP.innerHTML='<tr><td colspan="3" class="vide">Aucun paiement enregistré.</td></tr>'; }
-    else tbP.innerHTML = paiements.map(h=>`
-      <tr style="border-bottom:1px solid #eee;">
-        <td style="padding:10px;">${h.date||'-'}</td>
-        <td style="padding:10px;font-weight:bold;color:#0288d1;">${formatPrix(h.montant)}</td>
-        <td style="padding:10px;color:#666;">${h.commentaire||'-'}</td>
-      </tr>`).join('');
+    if (livraisons.length === 0) {
+      tbL.innerHTML = '<tr><td colspan="3" class="vide">Aucune livraison enregistrée.</td></tr>';
+    } else {
+      tbL.innerHTML = livraisons.map(h => `
+        <tr style="border-bottom:1px solid #eee;">
+          <td style="padding:10px;">${h.created_at ? new Date(h.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-'}</td>
+          <td style="padding:10px;color:#555;">${h.commentaire||'-'}</td>
+          <td style="padding:10px;font-weight:bold;color:#2e7d32;">${formatPrix(h.montant)}</td>
+        </tr>`).join('');
+    }
   }
 }
 
@@ -1018,7 +1036,7 @@ async function ajouterFluxFournisseur(type) {
   const ms = prompt(titre); if (!ms) return;
   const montant = parseInt(ms); if (isNaN(montant)||montant<=0) { alert("❌ Montant invalide !"); return; }
   const commentaire = prompt("Commentaire (Ex: Facture N°...) :");
-  const { error } = await client.from('fournisseur_historique').insert([{ type_action:type, montant, commentaire:commentaire||'', date:dateStr() }]);
+  const { error } = await client.from('fournisseur_historique').insert([{ bar_id: barActuel.id, type_action:type, montant, commentaire:commentaire||'' }]);
   if (error) { toast('❌ '+error.message,'error'); } else { toast('✅ Enregistré !'); await chargerEspaceFournisseur(); }
 }
 
@@ -1072,10 +1090,9 @@ async function envoyerTotalVersHistoriqueFournisseur() {
   const commentaire = recapTexte || 'Approvisionnement stock';
   try {
     const { error:eI } = await client.from('fournisseur_historique').insert([{
-      type_action: 'LIVRAISON',
+     type_action: 'LIVRAISON',
       montant,
       commentaire,
-      date: dateStr(),
       bar_id: barActuel.id
     }]);
     if (eI) throw eI;
@@ -1157,15 +1174,25 @@ async function modifierPrixTotalFournisseurStockage() {
 
 async function payerEtReinitialiserFournisseur() {
   try {
-    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').single();
-    const montant = cfg?parseInt(cfg.valeur)||0:0;
+    const { data:cfg } = await client.from('config')
+      .select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
+    const montant = cfg ? parseInt(cfg.valeur)||0 : 0;
     if (montant===0) { alert("ℹ️ Montant fournisseur déjà à 0."); return; }
     if (!confirm(`Confirmer le paiement de ${formatPrix(montant)} ?`)) return;
-    const { data:tr, error:eH } = await client.from('ventes').insert([{ total:montant, benefice:-montant, benef:-montant, articles:JSON.stringify([{designation:"📦 PAIEMENT FOURNISSEUR (Réinitialisation)",qte:1,prix:montant}]), date:dateStr() }]).select().single();
+    const { data:tr, error:eH } = await client.from('ventes').insert([{
+      bar_id: barActuel.id, total:montant, benefice:-montant, benef:-montant,
+      
+    }]).select().single();
     if (eH) throw eH;
-    await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:"📦 PAIEMENT FOURNISSEUR (Réinitialisation)", quantite:1, prix_unitaire:montant }]);
-    await client.from('config').upsert({ cle:'total_fournisseur', valeur:"0" });
-    toast(`✅ Paiement ${formatPrix(montant)} enregistré`); await initialiserApplication();
+    await client.from('vente_articles').insert([{
+      vente_id:tr.id, bar_id: barActuel.id,
+      boisson_designation:"📦 PAIEMENT FOURNISSEUR (Réinitialisation)",
+      quantite:1, prix_unitaire:montant
+    }]);
+    await client.from('config').update({ valeur:"0" })
+      .eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
+    toast(`✅ Paiement ${formatPrix(montant)} enregistré`);
+    await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -1215,8 +1242,8 @@ function telechargerPDFFournisseur() {
   const tP=document.getElementById('fournisseur-historique-rows')?.closest('table');
   const totalL=document.getElementById('fourn-total-livre')?.innerText||'';
   const totalP=document.getElementById('fournisseur-bilan-paye')?.innerText||'';
-  const resteDu=document.getElementById('fourn-reste-du')?.innerText||'';
-  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}h3{color:#0288d1}.bilan{display:flex;gap:20px;margin-bottom:20px}.bilan-item{padding:12px 20px;border-radius:8px;text-align:center}.b1{background:#e8f5e9;color:#1b5e20}.b2{background:#e3f2fd;color:#01579b}.b3{background:#fff3e0;color:#bf360c}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><div class="bilan"><div class="bilan-item b1"><div>Total Livré</div><strong>${totalL}</strong></div><div class="bilan-item b2"><div>Total Payé</div><strong>${totalP}</strong></div><div class="bilan-item b3"><div>Reste Dû</div><strong>${resteDu}</strong></div></div><h3>📦 Livraisons</h3>${tL?tL.outerHTML:''}<h3>💳 Paiements</h3>${tP?tP.outerHTML:''}</body></html>`;
+
+  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}h3{color:#0288d1}.bilan{display:flex;gap:20px;margin-bottom:20px}.bilan-item{padding:12px 20px;border-radius:8px;text-align:center}.b1{background:#e8f5e9;color:#1b5e20}.b2{background:#e3f2fd;color:#01579b}.b3{background:#fff3e0;color:#bf360c}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><div class="bilan"><div class="bilan-item b1"><div>Total Livré</div><strong>${totalL}</strong></div><div class="bilan-item b2"><div>Total Payé</div><strong>${totalP}</strong></div><div class="bilan-item b3"></div><h3>📦 Livraisons</h3>${tL?tL.outerHTML:''}<h3>💳 Paiements</h3>${tP?tP.outerHTML:''}</body></html>`;
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download=`fournisseur_${new Date().toISOString().slice(0,10)}.html`; a.click();
   toast('⬇️ PDF fournisseur téléchargé');
@@ -1250,7 +1277,7 @@ function envoyerWhatsAppFournisseur() {
   let livs='', paies='';
   rowsL.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=2) livs+=`• ${c[0].innerText} — ${c[2].innerText}\n`; });
   rowsP.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=2) paies+=`• ${c[0].innerText} — ${c[1].innerText}\n`; });
-  const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n💳 Paiements :\n${paies}\n\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\n⚠️ Reste Dû : ${rD}\n\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
+  const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n💳 Paiements :\n${paies}\n\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
@@ -1260,9 +1287,13 @@ document.addEventListener("DOMContentLoaded", () => {
   gererConnexion();
   const sCat=document.getElementById('search-catalogue'); if(sCat)sCat.addEventListener('input',afficherCatalogue);
   const sVen=document.getElementById('search-ventes'); if(sVen)sVen.addEventListener('input',afficherVentes);
-  // Connexion PIN : Enter déclenche
-  const connPin=document.getElementById('conn-pin');
-  if(connPin)connPin.addEventListener('keydown',e=>{if(e.key==='Enter')seConnecter();});
+    const connEmail = document.getElementById('conn-email');
+  const connPassword = document.getElementById('conn-password');
+  const insConfirm = document.getElementById('ins-password-confirm');
+  [connEmail, connPassword].forEach(el => {
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); });
+  });
+  if (insConfirm) insConfirm.addEventListener('keydown', e => { if (e.key === 'Enter') inscrireBar(); });
   restaurerSession();
 });
 

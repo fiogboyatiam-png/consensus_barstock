@@ -8,96 +8,54 @@
 </head>
 <body>
   <!-- ===== ÉCRAN AUTH ===== -->
-<div id="ecran-auth" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:linear-gradient(135deg,#1b5e20,#2e7d32); padding:20px;">
-  <div style="background:white; border-radius:16px; padding:36px; width:100%; max-width:400px; box-shadow:0 12px 40px rgba(0,0,0,0.3);">
-
-    <!-- Logo -->
-    <div style="text-align:center; margin-bottom:24px;">
-      <div style="font-size:48px;">🍺</div>
-      <h1 style="color:#2e7d32; margin:6px 0 4px; font-size:22px;">Consensus BarStock</h1>
-      <p style="color:#888; font-size:13px; margin:0;">Gestion de stock pour bars</p>
+<div id="ecran-auth" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo" aria-hidden="true">
+      <svg viewBox="0 0 64 64" role="img">
+        <path d="M20 21h25a7 7 0 0 1 0 14h-3" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M18 18h24v34H18z" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M16 18c0-5 5-8 10-5 3-5 11-5 14 0 5-2 9 1 9 5 0 4-3 6-7 6H22c-4 0-6-2-6-6z" fill="white" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M26 29v15M34 29v15" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+      </svg>
     </div>
 
-    <!-- Tabs -->
-    <div style="display:flex; border-bottom:2px solid #eee; margin-bottom:22px;">
-      <button id="tab-connexion" class="tab-active" onclick="afficherOngletAuth('connexion')"
-        style="flex:1; border:none; background:none; padding:10px; font-size:14px; font-weight:700; cursor:pointer; color:#2e7d32; border-bottom:3px solid #2e7d32; margin-bottom:-2px;">
-        🔓 Se connecter
-      </button>
-      <button id="tab-inscription" onclick="afficherOngletAuth('inscription')"
-        style="flex:1; border:none; background:none; padding:10px; font-size:14px; font-weight:700; cursor:pointer; color:#888; border-bottom:3px solid transparent; margin-bottom:-2px;">
-        ✨ Nouveau bar
-      </button>
+    <h1>Consensus BarStock</h1>
+    <p class="auth-subtitle">Gestion de stock pour bars</p>
+
+    <div class="auth-tabs">
+      <button id="tab-connexion" class="auth-tab tab-active" type="button" onclick="afficherOngletAuth('connexion')">Se connecter</button>
+      <button id="tab-inscription" class="auth-tab" type="button" onclick="afficherOngletAuth('inscription')">Nouveau bar</button>
     </div>
 
-    <!-- PANEL CONNEXION -->
-    <div id="panel-connexion">
-      <p style="font-size:13px; color:#666; margin-bottom:16px; text-align:center;">
-        Entrez votre code PIN pour accéder à votre bar
-      </p>
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        <div style="position:relative;">
-          <input type="password" id="conn-pin" placeholder="Code PIN (4-6 chiffres)"
-            style="width:100%; padding:13px 44px 13px 14px; border:2px solid #ddd; border-radius:10px; font-size:18px; letter-spacing:6px; text-align:center; box-sizing:border-box;"
-            maxlength="6" inputmode="numeric">
-          <button onclick="toggleVoirPin('conn-pin')"
-            style="position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:18px;">👁️</button>
+    <div id="panel-connexion" class="auth-panel">
+      <p class="auth-help">Entrez vos identifiants pour acceder a votre bar</p>
+      <div class="auth-fields">
+        <input type="email" id="conn-email" class="auth-input" placeholder="Email" autocomplete="email">
+        <div class="auth-password-wrap">
+          <input type="password" id="conn-password" class="auth-input" placeholder="Mot de passe" autocomplete="current-password">
+          <button class="auth-eye" type="button" onclick="toggleVoirPin('conn-password')" aria-label="Afficher ou masquer le mot de passe">oeil</button>
         </div>
-        <button id="btn-connexion" onclick="seConnecter()"
-          style="background:#2e7d32; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; font-weight:bold; cursor:pointer; transition:0.2s;">
-          🔓 Se connecter
-        </button>
+        <button id="btn-connexion" class="auth-submit" type="button" onclick="seConnecter()">Se connecter</button>
       </div>
     </div>
 
-    <!-- PANEL INSCRIPTION -->
-    <div id="panel-inscription" style="display:none;">
-      <p style="font-size:13px; color:#666; margin-bottom:16px; text-align:center;">
-        Créez votre compte bar en 30 secondes
-      </p>
-      <div style="display:flex; flex-direction:column; gap:12px;">
-        <input type="text" id="ins-nom" placeholder="Nom de votre bar (ex: Bar Chez Maman)"
-          style="padding:12px; border:2px solid #ddd; border-radius:10px; font-size:14px; box-sizing:border-box; width:100%;">
-
-        <div style="position:relative;">
-          <input type="password" id="ins-pin" placeholder="Choisir un code PIN (4-6 chiffres)"
-            style="width:100%; padding:12px 44px 12px 12px; border:2px solid #ddd; border-radius:10px; font-size:16px; letter-spacing:4px; text-align:center; box-sizing:border-box;"
-            maxlength="6" inputmode="numeric">
-          <button onclick="toggleVoirPin('ins-pin')"
-            style="position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁️</button>
+    <div id="panel-inscription" class="auth-panel" style="display:none;">
+      <p class="auth-help">Creez votre compte bar en 30 secondes</p>
+      <div class="auth-fields">
+        <input type="text" id="ins-nom" class="auth-input" placeholder="Nom de votre bar" autocomplete="organization">
+        <input type="email" id="ins-email" class="auth-input" placeholder="Email" autocomplete="email">
+        <div class="auth-password-wrap">
+          <input type="password" id="ins-password" class="auth-input" placeholder="Mot de passe (min 6 car.)" autocomplete="new-password">
+          <button class="auth-eye" type="button" onclick="toggleVoirPin('ins-password')" aria-label="Afficher ou masquer le mot de passe">oeil</button>
         </div>
-
-        <button onclick="genererPin()"
-          style="background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; padding:8px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
-          🎲 Générer un PIN aléatoire
-        </button>
-
-        <!-- Aperçu PIN généré -->
-        <div id="pin-preview" style="display:none; background:#fff3e0; border:2px dashed #ef6c00; border-radius:8px; padding:10px; text-align:center;">
-          <div style="font-size:11px; color:#888; margin-bottom:4px;">PIN généré :</div>
-          <div style="font-size:28px; font-weight:bold; letter-spacing:6px; color:#e65100;"></div>
-          <div style="font-size:11px; color:#ef6c00; margin-top:4px;">⚠️ Notez-le maintenant !</div>
-        </div>
-
-        <input type="password" id="ins-pin-confirm" placeholder="Confirmer le PIN"
-          style="padding:12px; border:2px solid #ddd; border-radius:10px; font-size:16px; letter-spacing:4px; text-align:center; box-sizing:border-box; width:100%;"
-          maxlength="6" inputmode="numeric">
-
-        <button id="btn-inscription" onclick="inscrireBar()"
-          style="background:#2e7d32; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; font-weight:bold; cursor:pointer;">
-          ✅ Créer mon compte
-        </button>
+        <input type="password" id="ins-password-confirm" class="auth-input" placeholder="Confirmer le mot de passe" autocomplete="new-password">
+        <button id="btn-inscription" class="auth-submit" type="button" onclick="inscrireBar()">Creer mon compte</button>
       </div>
     </div>
 
-    <!-- Erreur -->
-    <div id="auth-erreur" style="display:none; background:#ffebee; color:#c62828; padding:10px 14px; border-radius:8px; font-size:13px; margin-top:14px; text-align:center;"></div>
-
+    <div id="auth-erreur" class="auth-error" style="display:none;"></div>
   </div>
 </div>
-  
-
-  
 
 <!-- Bannière hors-ligne -->
 <div id="app-principale" style="display:none;">
@@ -114,6 +72,8 @@
         </button>
         <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
       </div>
+
+
     </header>
 
 
@@ -128,19 +88,25 @@
 
 <!-- Navigation -->
 <nav>
-  <button class="nav-btn active" data-section="catalogue" onclick="showSection('catalogue')">📦 Catalogue</button>
-  <button class="nav-btn" data-section="etat-stock" onclick="showSection('etat-stock')">📊 État Stock</button>
-  <button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')">🔄 Stockage / Récup</button>
-  <button class="nav-btn" data-section="ventes" onclick="showSection('ventes')">💰 Caisse Ventes</button>
-  <button class="nav-btn" data-section="historique" onclick="showSection('historique')">📋 Historique</button>
-<button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')">🗑️ Corbeille</button>
-</nav>
+  <button class="nav-btn active" data-section="catalogue" onclick="showSection('catalogue')"><i data-lucide="package" class="icon"></i> Catalogue</button>
+<button class="nav-btn" data-section="etat-stock" onclick="showSection('etat-stock')"><i data-lucide="bar-chart-2" class="icon"></i> État Stock</button>
+<button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')"><i data-lucide="refresh-cw" class="icon"></i> Stockage / Récup</button>
+<button class="nav-btn" data-section="ventes" onclick="showSection('ventes')"><i data-lucide="banknote" class="icon"></i> Caisse</button>
+<button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
+<button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
 </div>
+<!-- MODAL CONFIRMATION VENTE -->
+<!-- MODAL CONFIRMATION VENTE -->
 <!-- MODAL CONFIRMATION VENTE -->
 <div class="modal-overlay" id="modal-confirm-vente">
   <div class="modal-box">
     <div class="modal-title">🧾 Confirmer la vente</div>
     <div class="modal-recap" id="modal-recap-contenu"></div>
+    <div style="margin:14px 0 4px;">
+      <label style="font-size:12px;color:#888;font-weight:600;display:block;margin-bottom:5px;">📝 Note (facultatif)</label>
+      <input type="text" id="note-vente" placeholder="Ex: Table 3, Client VIP, Crédit..."
+        style="width:100%;padding:9px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;">
+    </div>
     <div class="modal-btns">
       <button class="btn btn-danger" onclick="fermerModalVente()">✖ Annuler</button>
       <button class="btn" onclick="confirmerVenteFinale()">✅ Encaisser</button>
@@ -273,8 +239,17 @@
               <span>Coût achat : <span id="recap-bbc">0 FCFA</span></span>
               <span>Bénéfice : <strong id="recap-benef" style="color:var(--primary);">0 FCFA</strong></span>
             </div>
+            <div style="margin-top:12px;">
+  <label style="font-size:12px;color:#888;font-weight:600;">Note (optionnel)</label>
+  <input type="text" id="note-vente" placeholder="Ex: Table 3, Client VIP..."
+    style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;
+           font-size:13px;margin-top:4px;">
+</div>
             <div class="ticket-actions">
               <button class="btn btn-danger" style="flex:1;" onclick="annulerVente()">✖ Vider</button>
+
+
+              
               <button class="btn" style="flex:2;font-size:16px;" onclick="ouvrirModalVente()">✅ Encaisser</button>
             </div>
           </div>
@@ -328,7 +303,9 @@
             <th>Date & Heure</th>
             <th>Articles vendus</th>
             <th>Total Encaissé</th>
-            <th>Bénéfice Net</th>
+            <th>Benefice</th>
+            <th>benefice net</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody id="historique-ventes-rows"></tbody>
@@ -364,24 +341,21 @@
           <div class="fourn-bilan-label">💳 Total Payé</div>
           <div class="fourn-bilan-val" id="fournisseur-bilan-paye">0 FCFA</div>
         </div>
-        <div class="fourn-bilan-item fourn-bilan-restant">
-          <div class="fourn-bilan-label">⚠️ Reste Dû</div>
-          <div class="fourn-bilan-val" id="fourn-reste-du">0 FCFA</div>
-        </div>
-      </div>
+        
 
       <!-- Formulaire ajout livraison -->
+      <!-- Formulaire ajout livraison -->
       <div class="fourn-section-titre fourn-titre-livraison">📦 Enregistrer une livraison fournisseur</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end;">
-        <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:5px;">
+      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:10px;margin-bottom:18px;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
           <label>Montant de la livraison (FCFA)</label>
-          <input type="number" id="fourn-montant-livraison" placeholder="Ex: 75000" min="0">
+          <input type="number" id="fourn-montant-livraison" placeholder="Ex: 75000" min="0" style="width:100%;box-sizing:border-box;">
         </div>
-        <div style="flex:2;min-width:200px;display:flex;flex-direction:column;gap:5px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
           <label>Détail de la livraison</label>
-          <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12">
+          <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12" style="width:100%;box-sizing:border-box;">
         </div>
-        <button class="btn" onclick="enregistrerLivraisonFournisseur()">📦 Enregistrer livraison</button>
+        <button class="btn" onclick="enregistrerLivraisonFournisseur()" style="white-space:nowrap;align-self:flex-end;">📦 Enregistrer livraison</button>
       </div>
 
       <!-- Tableau livraisons -->
@@ -395,16 +369,7 @@
         <tbody id="fourn-livraisons-rows"></tbody>
       </table>
 
-      <!-- Tableau paiements -->
-      <div class="fourn-section-titre fourn-titre-paiement" style="margin-top:22px;">💳 Historique des Paiements</div>
-      <table>
-        <thead><tr>
-          <th>Date & Heure</th>
-          <th>Montant Payé</th>
-          <th>Note / Commentaire</th>
-        </tr></thead>
-        <tbody id="fournisseur-historique-rows"></tbody>
-      </table>
+      
 
       <div class="btn-group">
         <button class="btn btn-info" onclick="telechargerPDFFournisseur()">⬇️ PDF</button>
@@ -447,7 +412,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="app.js"></script>
+<script>lucide.createIcons();</script>
 </body>
 </html>
