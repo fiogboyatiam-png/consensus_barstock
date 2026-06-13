@@ -121,8 +121,11 @@
       <span id="nom-bar-actuel">🍺 Consensus BarStock</span>
       <div class="header-right">
         <button onclick="seDeconnecter()"
-          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
-          🚪 Déconnexion<button class="btn" onclick="changerUtilisateur()"
+  style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);
+         color:white;padding:6px 12px;border-radius:20px;cursor:pointer;font-size:13px;">
+  🚪 Déconnexion
+</button>
+<button class="btn" onclick="changerUtilisateur()"
   style="background:rgba(255,255,255,0.15);font-size:13px;">
   🔄 Changer
 </button>
@@ -243,24 +246,7 @@
         <tbody></tbody>
       </table>
     </div>
-    <!-- Gestion serveuses — gérant seulement -->
-<div class="card gerant-only" style="margin-top:16px;">
-  <div class="card-header" style="background:#0f3d22;"><h3>👤 Gestion des Serveuses</h3></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:16px;align-items:end;">
-    <div style="display:flex;flex-direction:column;gap:5px;">
-      <label style="font-size:13px;font-weight:600;">Nom</label>
-      <input type="text" id="srv-nom" placeholder="Ex: Marie"
-        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
-    </div>
-    <div style="display:flex;flex-direction:column;gap:5px;">
-      <label style="font-size:13px;font-weight:600;">Code PIN (4-6 chiffres)</label>
-      <input type="password" id="srv-pin" placeholder="Ex: 1234" maxlength="6"
-        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
-    </div>
-    <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
-  </div>
-  <div id="liste-serveuses-gestion"></div>
-</div>
+  
   </div>
 
   <!-- ===== STOCKAGE / RÉCUP ===== -->
@@ -492,7 +478,26 @@
   </div><!-- fin historique -->
 
 </div><!-- fin container -->
+
 <div id="rapport-serveuses" class="section">
+    <!-- Gestion serveuses — gérant seulement -->
+<div class="card gerant-only" style="margin-top:16px;">
+  <div class="card-header" style="background:#0f3d22;"><h3>👤 Gestion des Serveuses</h3></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:16px;align-items:end;">
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <label style="font-size:13px;font-weight:600;">Nom</label>
+      <input type="text" id="srv-nom" placeholder="Ex: Marie"
+        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <label style="font-size:13px;font-weight:600;">Code PIN (4-6 chiffres)</label>
+      <input type="password" id="srv-pin" placeholder="Ex: 1234" maxlength="6"
+        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
+    </div>
+    <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
+  </div>
+  <div id="liste-serveuses-gestion"></div>
+</div>
   <div class="card">
     <div class="card-header" style="background:#0f3d22;">
       <h3>📊 Rapport par Serveuse</h3>

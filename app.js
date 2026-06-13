@@ -293,9 +293,11 @@ async function initialiserApplication() {
 
     const { data: dv, error: eV } = await client
       .from('ventes')
-      .select('id, total, benefice, benef,note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
-      .eq('bar_id', barActuel.id)
-      .order('created_at', { ascending: false });
+      // APRÈS
+.select('id, total, benefice, benef, note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
+.eq('bar_id', barActuel.id)
+.order('created_at', { ascending: false })
+.limit(200)
     if (eV) throw eV;
 
     historique = (dv || []).map(v => {
@@ -352,19 +354,22 @@ function rafrachirVueActive() {
   const sec = document.querySelector('.section.active');
   if (!sec) return;
   const id = sec.id;
-  if (id === 'catalogue') { afficherCatalogue(); statsCatalogue(); if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
- }
-  else if (id === 'etat-stock') afficherEtatProduits();
-  afficherEtatProduits();
-  if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
-
+  if (id === 'catalogue') {
+    afficherCatalogue(); statsCatalogue();
+    if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
+  }
+  else if (id === 'etat-stock') {
+    afficherEtatProduits();
+    if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
+  }
   else if (id === 'stockage-recup') afficherStockage();
-  else if (id === 'ventes') { afficherVentes(); mettreAJourTicket(); afficherDerniereVente(); }
+ else if (id === 'ventes') { 
+  setTimeout(() => { afficherVentes(); mettreAJourTicket(); afficherDerniereVente(); }, 50);
+}
   else if (id === 'commandes') chargerCommandes();
   else if (id === 'rapport-serveuses') chargerRapportServeuses();
   else if (id === 'historique') { afficherHistorique(); chargerEspaceFournisseur(); dessinerGraphique(); }
 }
-
 function showSection(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -373,6 +378,7 @@ function showSection(id) {
   if (id === 'corbeille') chargerCorbeille();
   else if (id === 'commandes') chargerCommandes();
   else if (id === 'rapport-serveuses') chargerRapportServeuses();
+  else if (id === 'historique') { afficherHistorique(); chargerEspaceFournisseur(); dessinerGraphique(); }
   else rafrachirVueActive();
 }
 
@@ -1781,27 +1787,36 @@ function lancerApplicationAvecRole() {
   const nomEl = document.getElementById('nom-bar-actuel');
   if (nomEl) nomEl.innerText = `Consensus BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
   appliquerRestrictions();
-  initialiserApplication();
   activerRealtime();
+  initialiserApplication().then(() => {
+    // Après chargement des données, afficher la bonne section
+    const estGerant = utilisateurActuel?.role === 'gerant';
+    if (estGerant) {
+      showSection('catalogue');
+    } else {
+      showSection('ventes');
+    }
+  });
 }
-
 function appliquerRestrictions() {
   const estGerant = utilisateurActuel?.role === 'gerant';
 
-  // Cacher les sections réservées au gérant
-  const sectionsGerant = ['etat-stock', 'stockage-recup', 'historique', 'corbeille'];
+  // Sections cachées pour les serveuses
+  const sectionsGerant = ['etat-stock', 'stockage-recup', 'historique', 'corbeille', 'rapport-serveuses'];
   sectionsGerant.forEach(id => {
     const btn = document.querySelector(`[data-section="${id}"]`);
     if (btn) btn.style.display = estGerant ? '' : 'none';
   });
 
-  // Cacher les éléments .gerant-only
+  // Éléments .gerant-only
   document.querySelectorAll('.gerant-only').forEach(el => {
     el.style.display = estGerant ? '' : 'none';
   });
 
-  // Si serveuse, forcer la section caisse
-  if (!estGerant) showSection('ventes');
+  // Si serveuse → forcer caisse
+  if (!estGerant) {
+    setTimeout(() => showSection('ventes'), 300);
+  }
 }
 
 // ── GESTION SERVEUSES (interface gérant) ──────────────────────
