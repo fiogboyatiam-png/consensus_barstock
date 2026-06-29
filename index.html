@@ -58,6 +58,18 @@
     <div id="auth-erreur" class="auth-error" style="display:none;"></div>
   </div>
 </div>
+<div id="ecran-admin" style="display:none; padding:24px; max-width:900px; margin:0 auto;">
+  <h2>Administration — Bars</h2>
+  <button onclick="seDeconnecter()" style="margin-bottom:16px;">Déconnexion</button>
+  <table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr style="text-align:left; border-bottom:2px solid #ddd;">
+        <th>Nom du bar</th><th>Créé le</th><th>Serveuses</th><th>Statut</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="admin-tbody"></tbody>
+  </table>
+</div>
 <!-- ÉCRAN CHOIX RÔLE -->
 <div id="ecran-role" style="display:none;min-height:100vh;background:#0f3d22;
   display:none;align-items:center;justify-content:center;flex-direction:column;gap:20px;">
@@ -516,7 +528,8 @@
           <option value="all">Tout</option>
         </select>
       </div>
-      <button class="btn" onclick="chargerRapportServeuses()">🔄 Actualiser</button>
+<button class="btn" onclick="chargerRapportServeuses()">🔄 Actualiser</button>
+<button class="btn btn-danger" onclick="reinitialiserVentesServeuse()">🗑️ Réinitialiser</button>&
     </div>
 
     <!-- Stats globales -->

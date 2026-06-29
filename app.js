@@ -113,7 +113,7 @@ function toggleVoirPin(inputId) {
 async function chargerBarUtilisateur(userId) {
   const { data: bars, error } = await client
     .from('bars')
-    .select('id, nom, owner_id')
+    .select('id, nom, owner_id, actif')
     .eq('owner_id', userId)
     .order('created_at', { ascending: true })
     .limit(1);
@@ -137,10 +137,21 @@ async function seConnecter() {
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
+    if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+      afficherInterfaceAdmin();
+      return;
+    }
+
+    
     const bar = await chargerBarUtilisateur(data.user.id);
     if (!bar) {
       await client.auth.signOut();
       afficherErreurAuth("Aucun bar n'est lie a ce compte.");
+      return;
+    }
+    if (bar.actif === false) {
+      await client.auth.signOut();
+      afficherErreurAuth("Ce bar a été désactivé. Contactez l'administrateur.");
       return;
     }
 
@@ -247,8 +258,16 @@ async function restaurerSession() {
     const session = sessionData.session;
     if (!session) { afficherEcranAuth(); return; }
 
-    const bar = await chargerBarUtilisateur(session.user.id);
+    if (session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') { afficherInterfaceAdmin(); return; }
+
+   const bar = await chargerBarUtilisateur(session.user.id);
     if (!bar) { afficherEcranAuth(); return; }
+
+    if (bar.actif === false) {
+      await client.auth.signOut();
+      afficherEcranAuth();
+      return;
+    }
 
     barActuel = bar;
     localStorage.setItem('barstock_bar_id', barActuel.id);
@@ -257,6 +276,52 @@ async function restaurerSession() {
   } catch {
     afficherEcranAuth();
   }
+}
+
+async function afficherInterfaceAdmin() {
+  document.getElementById('ecran-auth').style.display = 'none';
+  document.getElementById('ecran-admin').style.display = 'block';
+
+  const { data: bars, error: errBars } = await client
+    .from('bars')
+    .select('id, nom, actif, created_at')
+    .order('created_at', { ascending: false });
+
+  if (errBars) { alert('Erreur chargement bars : ' + errBars.message); return; }
+
+  const { data: serveuses } = await client.from('serveuses').select('bar_id');
+  const compteurs = {};
+  (serveuses || []).forEach(s => {
+    compteurs[s.bar_id] = (compteurs[s.bar_id] || 0) + 1;
+  });
+
+  const tbody = document.getElementById('admin-tbody');
+  tbody.innerHTML = (bars || []).map(b => {
+    const date = new Date(b.created_at).toLocaleDateString('fr-FR');
+    const nbServeuses = compteurs[b.id] || 0;
+    const statutTxt = b.actif ? 'Actif' : 'Désactivé';
+    const statutCouleur = b.actif ? '#2e7d32' : '#c62828';
+    const btnTxt = b.actif ? 'Désactiver' : 'Activer';
+    return `<tr>
+      <td>${escape(b.nom)}</td>
+      <td>${date}</td>
+      <td>${nbServeuses}</td>
+      <td style="color:${statutCouleur};font-weight:600;">${statutTxt}</td>
+      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" class="btn-toggle-bar">${btnTxt}</button></td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('.btn-toggle-bar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-bar-id');
+      const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
+      btn.disabled = true;
+      const { error } = await client.from('bars').update({ actif: !actifActuel }).eq('id', id);
+      btn.disabled = false;
+      if (error) { alert('Erreur : ' + error.message); return; }
+      afficherInterfaceAdmin();
+    });
+  });
 }
 
 function lancerApplication() {
