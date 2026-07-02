@@ -7,10 +7,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- ===== ÉCRAN AUTH ===== -->
-<div id="ecran-auth" class="auth-screen">
-  <!-- ÉCRAN CHOIX RÔLE -->
 
+<!-- ===== ÉCRAN AUTH ===== -->
+<div id="ecran-auth" class="auth-screen">
   <div class="auth-card">
     <div class="auth-logo" aria-hidden="true">
       <svg viewBox="0 0 64 64" role="img">
@@ -20,14 +19,8 @@
         <path d="M26 29v15M34 29v15" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
       </svg>
     </div>
-
     <h1>Consensus BarStock</h1>
     <p class="auth-subtitle">Gestion de stock pour bars</p>
-
-    <div class="auth-tabs">
-      <button id="tab-connexion" class="auth-tab tab-active" type="button" onclick="afficherOngletAuth('connexion')">Se connecter</button>
-      <button id="tab-inscription" class="auth-tab" type="button" onclick="afficherOngletAuth('inscription')">Nouveau bar</button>
-    </div>
 
     <div id="panel-connexion" class="auth-panel">
       <p class="auth-help">Entrez vos identifiants pour acceder a votre bar</p>
@@ -41,89 +34,134 @@
       </div>
     </div>
 
-    <div id="panel-inscription" class="auth-panel" style="display:none;">
-      <p class="auth-help">Creez votre compte bar en 30 secondes</p>
-      <div class="auth-fields">
-        <input type="text" id="ins-nom" class="auth-input" placeholder="Nom de votre bar" autocomplete="organization">
-        <input type="email" id="ins-email" class="auth-input" placeholder="Email" autocomplete="email">
-        <div class="auth-password-wrap">
-          <input type="password" id="ins-password" class="auth-input" placeholder="Mot de passe (min 6 car.)" autocomplete="new-password">
-          <button class="auth-eye" type="button" onclick="toggleVoirPin('ins-password')" aria-label="Afficher ou masquer le mot de passe">oeil</button>
-        </div>
-        <input type="password" id="ins-password-confirm" class="auth-input" placeholder="Confirmer le mot de passe" autocomplete="new-password">
-        <button id="btn-inscription" class="auth-submit" type="button" onclick="inscrireBar()">Creer mon compte</button>
-      </div>
-    </div>
-
     <div id="auth-erreur" class="auth-error" style="display:none;"></div>
   </div>
 </div>
-<div id="ecran-admin" style="display:none; padding:24px; max-width:900px; margin:0 auto;">
-  <h2>Administration — Bars</h2>
-  <button onclick="seDeconnecter()" style="margin-bottom:16px;">Déconnexion</button>
-  <table style="width:100%; border-collapse:collapse;">
-    <thead>
-      <tr style="text-align:left; border-bottom:2px solid #ddd;">
-        <th>Nom du bar</th><th>Créé le</th><th>Serveuses</th><th>Statut</th><th>Action</th>
-      </tr>
-    </thead>
-    <tbody id="admin-tbody"></tbody>
-  </table>
-</div>
-<!-- ÉCRAN CHOIX RÔLE -->
-<div id="ecran-role" style="display:none;min-height:100vh;background:#0f3d22;
-  display:none;align-items:center;justify-content:center;flex-direction:column;gap:20px;">
-  <div style="text-align:center;color:white;margin-bottom:10px;">
-    <div style="font-size:28px;font-weight:800;">Consensus BarStock</div>
-    <div style="opacity:0.7;margin-top:5px;" id="role-bar-nom"></div>
+
+<!-- ===== ÉCRAN SUPER ADMIN ===== -->
+<div id="ecran-admin" style="display:none; min-height:100vh; background:#f5f7fa; padding:24px;">
+  <div style="max-width:1100px; margin:0 auto;">
+
+    <!-- Header admin -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; background:#0f3d22; padding:18px 24px; border-radius:12px; color:white;">
+      <div>
+        <div style="font-size:22px; font-weight:800;">🛡️ Super Administration</div>
+        <div style="opacity:0.7; font-size:13px; margin-top:2px;">Consensus BarStock — Gestion globale des bars</div>
+      </div>
+      <button onclick="seDeconnecterAdmin()"
+        style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
+        🚪 Déconnexion
+      </button>
+    </div>
+
+    <!-- Formulaire création bar -->
+    <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid #1a6b3a;">
+      <h3 style="margin:0 0 16px; color:#0f3d22;">➕ Créer un nouveau bar</h3>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <label style="font-size:13px; font-weight:600; color:#555;">Nom du bar</label>
+          <input type="text" id="new-bar-nom" placeholder="Ex: Bar Le Sunset"
+            style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <label style="font-size:13px; font-weight:600; color:#555;">Email du gérant</label>
+          <input type="email" id="new-bar-email" placeholder="gerant@bar.com"
+            style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <label style="font-size:13px; font-weight:600; color:#555;">Mot de passe</label>
+          <input type="password" id="new-bar-password" placeholder="Min. 6 caractères"
+            style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+        </div>
+        <button id="btn-creer-bar" onclick="creerBar()"
+          style="background:#1a6b3a; color:white; border:none; padding:11px 20px; border-radius:8px; cursor:pointer; font-weight:700; font-size:14px; white-space:nowrap;">
+          ➕ Créer le bar
+        </button>
+      </div>
+      <div id="admin-erreur" style="display:none; color:#c62828; background:#fff5f5; border:1px solid #ffcdd2; padding:10px 14px; border-radius:8px; margin-top:12px; font-size:13px;"></div>
+    </div>
+
+    <!-- Tableau des bars -->
+    <div style="background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
+        <button onclick="chargerTableauAdmin()"
+          style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
+          🔄 Actualiser
+        </button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Nom du bar</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Email gérant</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Créé le</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">PIN Gérant</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Serveuses & PINs</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Statut</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="admin-tbody">
+            <tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
-  <div style="display:flex;flex-direction:column;gap:14px;width:300px;">
+</div>
+
+<!-- ===== ÉCRAN CHOIX RÔLE ===== -->
+<div id="ecran-role" style="display:none; min-height:100vh; background:#0f3d22;
+  align-items:center; justify-content:center; flex-direction:column; gap:20px;">
+  <div style="text-align:center; color:white; margin-bottom:10px;">
+    <div style="font-size:28px; font-weight:800;">Consensus BarStock</div>
+    <div style="opacity:0.7; margin-top:5px;" id="role-bar-nom"></div>
+  </div>
+  <div style="display:flex; flex-direction:column; gap:14px; width:300px;">
     <button onclick="connexionGerant()"
-      style="background:#d4a017;color:white;border:none;padding:18px;border-radius:10px;
-             font-size:16px;font-weight:700;cursor:pointer;">
+      style="background:#d4a017; color:white; border:none; padding:18px; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer;">
       👑 Gérant — Accès complet
     </button>
     <button onclick="afficherChoixServeuse()"
-      style="background:#1a6b3a;color:white;border:none;padding:18px;border-radius:10px;
-             font-size:16px;font-weight:700;cursor:pointer;border:2px solid #4caf50;">
+      style="background:#1a6b3a; color:white; border:none; padding:18px; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; border:2px solid #4caf50;">
       👤 Serveuse — Caisse & Commandes
     </button>
   </div>
 
   <!-- Connexion gérant (PIN) -->
-  <div id="panel-gerant" style="display:none;background:white;border-radius:12px;padding:24px;width:300px;">
-    <div style="font-weight:700;margin-bottom:12px;">🔐 Code PIN Gérant</div>
+  <div id="panel-gerant" style="display:none; background:white; border-radius:12px; padding:24px; width:300px;">
+    <div style="font-weight:700; margin-bottom:12px;">🔐 Code PIN Gérant</div>
     <input type="password" id="input-pin-gerant" placeholder="Code PIN"
-      style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;
-             font-size:18px;text-align:center;letter-spacing:8px;box-sizing:border-box;"
+      style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:18px; text-align:center; letter-spacing:8px; box-sizing:border-box;"
       maxlength="6" onkeydown="if(event.key==='Enter') validerPinGerant()">
     <button onclick="validerPinGerant()"
-      style="width:100%;margin-top:10px;background:#1a6b3a;color:white;border:none;
-             padding:10px;border-radius:6px;font-weight:700;cursor:pointer;">
+      style="width:100%; margin-top:10px; background:#1a6b3a; color:white; border:none; padding:10px; border-radius:6px; font-weight:700; cursor:pointer;">
       Entrer
     </button>
-    <div id="erreur-pin-gerant" style="color:#c62828;font-size:13px;margin-top:8px;display:none;"></div>
+    <div id="erreur-pin-gerant" style="color:#c62828; font-size:13px; margin-top:8px; display:none;"></div>
   </div>
 
   <!-- Choix serveuse -->
-  <div id="panel-serveuse" style="display:none;background:white;border-radius:12px;padding:24px;width:300px;">
-    <div style="font-weight:700;margin-bottom:12px;">👤 Qui êtes-vous ?</div>
-    <div id="liste-serveuses" style="display:flex;flex-direction:column;gap:8px;"></div>
-    <div id="panel-pin-serveuse" style="display:none;margin-top:12px;">
+  <div id="panel-serveuse" style="display:none; background:white; border-radius:12px; padding:24px; width:300px;">
+    <div style="font-weight:700; margin-bottom:12px;">👤 Qui êtes-vous ?</div>
+    <div id="liste-serveuses" style="display:flex; flex-direction:column; gap:8px;"></div>
+    <div id="panel-pin-serveuse" style="display:none; margin-top:12px;">
       <input type="password" id="input-pin-serveuse" placeholder="Votre code PIN"
-        style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;
-               font-size:18px;text-align:center;letter-spacing:8px;box-sizing:border-box;"
+        style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:18px; text-align:center; letter-spacing:8px; box-sizing:border-box;"
         maxlength="6" onkeydown="if(event.key==='Enter') validerPinServeuse()">
       <button onclick="validerPinServeuse()"
-        style="width:100%;margin-top:8px;background:#1a6b3a;color:white;border:none;
-               padding:10px;border-radius:6px;font-weight:700;cursor:pointer;">
+        style="width:100%; margin-top:8px; background:#1a6b3a; color:white; border:none; padding:10px; border-radius:6px; font-weight:700; cursor:pointer;">
         Entrer
       </button>
-      <div id="erreur-pin-serveuse" style="color:#c62828;font-size:13px;margin-top:6px;display:none;"></div>
+      <div id="erreur-pin-serveuse" style="color:#c62828; font-size:13px; margin-top:6px; display:none;"></div>
     </div>
   </div>
 </div>
-<!-- Bannière hors-ligne -->
+
+<!-- ===== APP PRINCIPALE ===== -->
 <div id="app-principale" style="display:none;">
 
   <div id="offline-banner">📡 Connexion perdue — Reconnectez-vous pour synchroniser.</div>
@@ -133,477 +171,497 @@
       <span id="nom-bar-actuel">🍺 Consensus BarStock</span>
       <div class="header-right">
         <button onclick="seDeconnecter()"
-  style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);
-         color:white;padding:6px 12px;border-radius:20px;cursor:pointer;font-size:13px;">
-  🚪 Déconnexion
-</button>
-<button class="btn" onclick="changerUtilisateur()"
-  style="background:rgba(255,255,255,0.15);font-size:13px;">
-  🔄 Changer
-</button>
+          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
+          🚪 Déconnexion
+        </button>
+        <button class="btn" onclick="changerUtilisateur()" style="background:rgba(255,255,255,0.15); font-size:13px;">
+          🔄 Changer
         </button>
         <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
       </div>
-
-
     </header>
 
-
-
-<!-- Stats du jour -->
-<div id="stats-jour">
-  <div class="stat-jour-item"><div class="stat-jour-label">Ventes aujourd'hui</div><div class="stat-jour-val" id="sj-nb">—</div></div>
-  <div class="stat-jour-item"><div class="stat-jour-label">Total encaissé</div><div class="stat-jour-val" id="sj-total">—</div></div>
-  <div class="stat-jour-item"><div class="stat-jour-label">Bénéfice du jour</div><div class="stat-jour-val" id="sj-benef">—</div></div>
-  <div class="stat-jour-item"><div class="stat-jour-label">Articles en rupture</div><div class="stat-jour-val" id="sj-rupture">—</div></div>
-</div>
-
-<!-- Navigation -->
-<nav>
-  <button class="nav-btn active" data-section="catalogue" onclick="showSection('catalogue')"><i data-lucide="package" class="icon"></i> Catalogue</button>
-<button class="nav-btn" data-section="etat-stock" onclick="showSection('etat-stock')"><i data-lucide="bar-chart-2" class="icon"></i> État Stock</button>
-<button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')"><i data-lucide="refresh-cw" class="icon"></i> Stockage / Récup</button>
-<button class="nav-btn" data-section="ventes" onclick="showSection('ventes')"><i data-lucide="banknote" class="icon"></i> Caisse</button>
-<button class="nav-btn" data-section="commandes" onclick="showSection('commandes')">
-  🧾 Commandes <span id="badge-commandes" style="display:none;background:#c62828;color:white;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:5px;">0</span>
-</button>
-<button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
-<button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">
-  📊 Serveuses
-</button>
-<button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
-
-</div>
-
-
-<!-- MODAL CONFIRMATION VENTE -->
-<div class="modal-overlay" id="modal-confirm-vente">
-  <div class="modal-box">
-    <div class="modal-title">🧾 Confirmer la vente</div>
-    <div class="modal-recap" id="modal-recap-contenu"></div>
-    <div style="margin:14px 0 4px;">
-      <label style="font-size:12px;color:#888;font-weight:600;display:block;margin-bottom:5px;">📝 Note (facultatif)</label>
-      <input type="text" id="note-vente" placeholder="Ex: Table 3, Client VIP, Crédit..."
-        style="width:100%;padding:9px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;">
-    </div>
-    <div class="modal-btns">
-      <button class="btn btn-danger" onclick="fermerModalVente()">✖ Annuler</button>
-      <button class="btn" onclick="confirmerVenteFinale()">✅ Encaisser</button>
-    </div>
-  </div>
-</div>
-
-<!-- TOAST -->
-<div id="toast-container"></div>
-
-<div class="container">
-
-  <!-- ===== CATALOGUE ===== -->
-  <div id="catalogue" class="section active">
-    <div id="stats-catalogue" class="stats-container"></div>
-    <div class="card">
-      <h3 style="margin-bottom:16px;">➕ Ajouter un produit</h3>
-      <form id="form-ajouter-boisson" onsubmit="ajouterBoisson(event)">
-        <div class="form-group">
-          <div><label>Désignation</label><input type="text" id="cat-nom" placeholder="Ex: PILS" required></div>
-          <div><label>Catégorie</label>
-            <select id="cat-categorie">
-              <option value="Bière">Bière</option>
-              <option value="Sucrerie">Sucrerie</option>
-              <option value="Eau">Eau</option>
-              <option value="Vin">Vin</option>
-              <option value="Whisky">Whisky</option>
-              <option value="Énergie">Énergie</option>
-            </select>
-          </div>
-          <div><label>Type Bouteille</label>
-            <select id="cat-type">
-              <option value="grand bouteille">Grand format (C12)</option>
-              <option value="petit bouteille">Petit format (C24)</option>
-            </select>
-          </div>
-          <div><label>Prix d'un cassier</label><input type="number" id="cat-pu-initial" min="0" required></div>
-          <div><label>Prix unitaire vente</label><input type="number" id="cat-prix-unitaire" min="0" required></div>
-          <div><label>Stock initial</label><input type="number" id="cat-stock" placeholder="0" min="0"></div>
-          <div><label>Seuil d'alerte</label><input type="number" id="cat-seuil" placeholder="6" min="1"></div>
-        </div>
-        <button type="submit" class="btn">Enregistrer</button>
-      </form>
-    </div>
-    <div class="card">
-      <h3 style="margin-bottom:12px;">Liste des articles</h3>
-      <input type="text" id="search-catalogue" class="search-box" placeholder="🔍 Rechercher...">
-      <table id="table-catalogue">
-        <thead><tr>
-          <th>Désignation</th><th>Type</th><th>Catégorie</th>
-          <th>Prix Cassier</th><th>Prix Vente Unit.</th>
-          <th>Stock</th><th>Statut</th><th>Actions</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ===== ÉTAT STOCK ===== -->
-  <div id="etat-stock" class="section">
-    <div class="card">
-      <h3 style="margin-bottom:6px;">📊 État Général des Produits</h3>
-      <p style="font-size:13px;color:#888;margin-bottom:14px;">Lignes colorées selon l'état du stock</p>
-      <input type="text" id="search-stock" class="search-box" placeholder="🔍 Rechercher..." oninput="filtrerEtatStock()">
-      <table id="table-etat-produits">
-        <thead><tr>
-          <th>Désignation</th><th>Type</th><th>Catégorie</th>
-          <th>Stock Actuel</th><th>Seuil</th><th>Statut</th><th>Actions</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  
-  </div>
-
-  <!-- ===== STOCKAGE / RÉCUP ===== -->
-  <div id="stockage-recup" class="section">
-    <div class="card">
-      <div style="display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap;">
-        <button id="btn-mode-appro" onclick="changerModeStockage('appro')" style="border:none;padding:10px 16px;font-size:14px;border-radius:8px;cursor:pointer;font-weight:700;transition:0.2s;">📦 Approvisionnement fournisseur</button>
-        <button id="btn-mode-retour" onclick="changerModeStockage('retour')" style="border:none;padding:10px 16px;font-size:14px;border-radius:8px;cursor:pointer;font-weight:700;transition:0.2s;">🔄 Retour client / Pertes</button>
-      </div>
-      <h3 id="stockage-titre" style="margin-top:0;">📦 Approvisionnement fournisseur</h3>
-      <p id="stockage-description" style="font-size:13px;color:#888;margin-bottom:16px;">💡 Gestion des stocks.</p>
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-        <input type="text" id="search-stockage" class="search-box" style="max-width:320px;" placeholder="🔍 Rechercher..." oninput="afficherStockage()">
-      </div>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom:2px solid #f0f0f0;">
-            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Boisson</th>
-            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Type</th>
-            <th style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:center;">Stock</th>
-            <th id="th-dynamique-prix" style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Prix Cassier</th>
-            <th id="th-dynamique-action" style="color:#888;font-size:12px;text-transform:uppercase;padding:14px 10px;text-align:left;">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tbody-stockage"></tbody>
-      </table>
-      <div id="zone-total-fournisseur" style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;padding:14px;border:1px solid #e2e8f0;border-radius:8px;margin-top:14px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span>💰 <strong>Montant total dû au fournisseur :</strong></span>
-          <span id="total-fournisseur-stockage" style="font-size:18px;font-weight:bold;color:#2e7d32;">0 FCFA</span>
-          <button style="background:none;border:none;cursor:pointer;font-size:16px;" onclick="modifierPrixTotalFournisseurStockage()" title="Modifier">✏️</button>
-        </div>
-        <button class="btn" onclick="envoyerTotalVersHistoriqueFournisseur()">🚀 Valider comme Versement</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== CAISSE VENTES ===== -->
-  <div id="ventes" class="section">
-    <div class="vente-layout">
-      <div class="vente-produits">
-        <div class="card">
-          <h3 style="margin: bottom 14px;">Sélection des boissons</h3>
-          <input type="text" id="search-ventes" class="search-box" placeholder="🔍 Rechercher...">
-          <div id="liste-produits-vente" class="liste-grid"></div>
-        </div>
-      </div>
-      <div class="vente-ticket">
-        <div class="ticket-sticky">
-          <div class="card" style="border-top:4px solid var(--primary);">
-            <h3 style="margin-top:0;">🧾 Ticket de Caisse</h3>
-            <div id="ticket-detail"></div>
-            <div class="ticket-total-box">
-              <span>TOTAL :</span>
-              <span id="total-montant">0 FCFA</span>
-            </div>
-            <div class="ticket-recap-fin">
-              <span>Coût achat : <span id="recap-bbc">0 FCFA</span></span>
-              <span>Bénéfice : <strong id="recap-benef" style="color:var(--primary);">0 FCFA</strong></span>
-            </div>
-            <div style="margin-top:12px;">
-  <label style="font-size:12px;color:#888;font-weight:600;">Note (optionnel)</label>
-  <input type="text" id="note-vente" placeholder="Ex: Table 3, Client VIP..."
-    style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;
-           font-size:13px;margin-top:4px;">
-</div><div class="ticket-actions">
-  <button class="btn btn-danger" style="flex:1;" onclick="annulerVente()">✖ Vider</button>
-  <button class="btn" style="flex:2;font-size:16px;" onclick="ouvrirModalVente()">✅ Encaisser</button>
-</div>
-<div id="btn-envoyer-table-wrapper" style="margin-top:8px;display:none;">
-  <button class="btn" style="width:100%;background:#0288d1;" onclick="ouvrirModalEnvoyerTable()">
-    📋 Envoyer vers une table
-  </button>
-</div>
-          </div>
-          <div class="card derniere-vente-card">
-            <div class="derniere-vente-label">🔙 Dernière vente enregistrée</div>
-            <div id="derniere-vente-info" class="derniere-vente-info">—</div>
-            <button class="btn btn-warning" style="width:100%;font-size:13px;" onclick="annulerDerniereVente()">↩️ Annuler la dernière vente</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
- <!-- ===== COMMANDE ===== -->
-  <div id="commandes" class="section">
-  <div class="card">
-    <div class="card-header" style="background:#1a6b3a;">
-      <h3>🧾 Commandes en cours</h3>
+    <!-- Stats du jour -->
+    <div id="stats-jour">
+      <div class="stat-jour-item"><div class="stat-jour-label">Ventes aujourd'hui</div><div class="stat-jour-val" id="sj-nb">—</div></div>
+      <div class="stat-jour-item"><div class="stat-jour-label">Total encaissé</div><div class="stat-jour-val" id="sj-total">—</div></div>
+      <div class="stat-jour-item"><div class="stat-jour-label">Bénéfice du jour</div><div class="stat-jour-val" id="sj-benef">—</div></div>
+      <div class="stat-jour-item"><div class="stat-jour-label">Articles en rupture</div><div class="stat-jour-val" id="sj-rupture">—</div></div>
     </div>
 
-    <!-- Nouvelle commande -->
-    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:20px;align-items:end;">
-      <div style="display:flex;flex-direction:column;gap:5px;">
-        <label style="font-size:13px;font-weight:600;">Numéro de table</label>
-        <input type="text" id="cmd-table" placeholder="Ex: Table 3, Bar, Terrasse..."
-          style="padding:9px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-      </div>
-      <div style="display:flex;flex-direction:column;gap:5px;">
-        <label style="font-size:13px;font-weight:600;">Nom client (optionnel)</label>
-        <input type="text" id="cmd-client" placeholder="Ex: Jean, Groupe VIP..."
-          style="padding:9px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-      </div>
-      <button class="btn" onclick="ouvrirNouvelleCommande()" style="white-space:nowrap;">
-        ➕ Nouvelle commande
+    <!-- Navigation -->
+    <nav>
+      <button class="nav-btn active" data-section="catalogue" onclick="showSection('catalogue')"><i data-lucide="package" class="icon"></i> Catalogue</button>
+      <button class="nav-btn" data-section="etat-stock" onclick="showSection('etat-stock')"><i data-lucide="bar-chart-2" class="icon"></i> État Stock</button>
+      <button class="nav-btn" data-section="stockage-recup" onclick="showSection('stockage-recup')"><i data-lucide="refresh-cw" class="icon"></i> Stockage / Récup</button>
+      <button class="nav-btn" data-section="ventes" onclick="showSection('ventes')"><i data-lucide="banknote" class="icon"></i> Caisse</button>
+      <button class="nav-btn" data-section="commandes" onclick="showSection('commandes')">
+        🧾 Commandes <span id="badge-commandes" style="display:none; background:#c62828; color:white; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:5px;">0</span>
       </button>
-    </div>
-
-    <!-- Liste commandes ouvertes -->
-    <div id="commandes-liste"></div>
+      <button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
+      <button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">📊 Serveuses</button>
+      <button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
+      <button class="nav-btn gerant-only" data-section="profil" onclick="showSection('profil')">⚙️ Profil</button>
+    </nav>
   </div>
-</div>
-  <!-- ===== HISTORIQUE ===== -->
-  <div id="historique" class="section">
 
-    <!-- Stats globales -->
-    <div id="stats-historique" class="stats-container"></div>
-
-    <!-- Ventes -->
-    <div class="card">
-      <div class="card-header"><h3>📋 Historique des Ventes de la Caisse</h3></div>
-
-      <div class="histo-filtres">
-        <div>
-          <label>🔍 Boisson</label>
-          <input type="text" id="filtre-histo-boisson" placeholder="Nom..." oninput="afficherHistorique()">
-        </div>
-        <div>
-          <label>📅 Date (JJ/MM/AAAA)</label>
-          <input type="text" id="filtre-histo-date" placeholder="Ex: 08/06/2026" oninput="afficherHistorique()">
-        </div>
-        <div>
-          <label>🏷️ Type</label>
-          <select id="filtre-histo-type" onchange="afficherHistorique()">
-            <option value="">Tous</option>
-            <option value="vente">💰 Ventes</option>
-            <option value="retour">🔄 Retours</option>
-            <option value="perte">⚠️ Pertes</option>
-            <option value="fournisseur">💳 Fournisseur</option>
-          </select>
-        </div>
-        <div style="align-self:flex-end;">
-          <button class="btn btn-grey btn-sm" onclick="reinitialiserFiltres()">✖ Effacer</button>
-        </div>
+  <!-- MODAL CONFIRMATION VENTE -->
+  <div class="modal-overlay" id="modal-confirm-vente">
+    <div class="modal-box">
+      <div class="modal-title">🧾 Confirmer la vente</div>
+      <div class="modal-recap" id="modal-recap-contenu"></div>
+      <div style="margin:14px 0 4px;">
+        <label style="font-size:12px; color:#888; font-weight:600; display:block; margin-bottom:5px;">📝 Note (facultatif)</label>
+        <input type="text" id="note-vente" placeholder="Ex: Table 3, Client VIP, Crédit..."
+          style="width:100%; padding:9px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; box-sizing:border-box;">
       </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Date & Heure</th>
-            <th>Articles vendus</th>
-            <th>Total Encaissé</th>
-            <th>Benefice</th>
-            <th>benefice net</th>
-            <th>Note</th>
-          </tr>
-        </thead>
-        <tbody id="historique-ventes-rows"></tbody>
-      </table>
-
-      <div class="btn-group">
-        <button class="btn btn-info" onclick="telechargerPDFVentes()">⬇️ PDF</button>
-        <button class="btn btn-green" onclick="envoyerWhatsAppVentes()">📲 WhatsApp</button>
-        <button class="btn btn-warning" onclick="exporterExcel()">📊 Excel</button>
-        <button class="btn btn-danger" onclick="reinitialiserVentes()">🗑️ Réinitialiser</button>
+      <div class="modal-btns">
+        <button class="btn btn-danger" onclick="fermerModalVente()">✖ Annuler</button>
+        <button class="btn" onclick="confirmerVenteFinale()">✅ Encaisser</button>
       </div>
     </div>
+  </div>
 
-    <!-- Graphique -->
-    <div class="card">
-      <h3 style="margin-bottom:14px;">📈 Ventes des 7 derniers jours</h3>
-      <canvas id="graphique-ventes" height="110"></canvas>
-    </div>
+  <!-- TOAST -->
+  <div id="toast-container"></div>
 
-    <hr class="sep">
+  <div class="container">
 
-    <!-- ===== ESPACE FOURNISSEUR ===== -->
-    <div class="card">
-      <div class="card-header" style="background:#388e3c;"><h3>🏪 Suivi Fournisseur</h3></div>
-
-      <!-- Bilan récapitulatif -->
-      <div class="fourn-bilan-box" id="fourn-bilan-box">
-        <div class="fourn-bilan-item fourn-bilan-livraisons">
-          <div class="fourn-bilan-label">📦 Total Livré</div>
-          <div class="fourn-bilan-val" id="fourn-total-livre">0 FCFA</div>
-        </div>
-        <div class="fourn-bilan-item fourn-bilan-paie">
-          <div class="fourn-bilan-label">💳 Total Payé</div>
-          <div class="fourn-bilan-val" id="fournisseur-bilan-paye">0 FCFA</div>
-        </div>
-        
-
-      <!-- Formulaire ajout livraison -->
-      <!-- Formulaire ajout livraison -->
-      <div class="fourn-section-titre fourn-titre-livraison">📦 Enregistrer une livraison fournisseur</div>
-      <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:10px;margin-bottom:18px;align-items:flex-end;">
-        <div style="display:flex;flex-direction:column;gap:5px;">
-          <label>Montant de la livraison (FCFA)</label>
-          <input type="number" id="fourn-montant-livraison" placeholder="Ex: 75000" min="0" style="width:100%;box-sizing:border-box;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:5px;">
-          <label>Détail de la livraison</label>
-          <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12" style="width:100%;box-sizing:border-box;">
-        </div>
-        <button class="btn" onclick="enregistrerLivraisonFournisseur()" style="white-space:nowrap;align-self:flex-end;">📦 Enregistrer livraison</button>
+    <!-- ===== CATALOGUE ===== -->
+    <div id="catalogue" class="section active">
+      <div id="stats-catalogue" class="stats-container"></div>
+      <div class="card">
+        <h3 style="margin-bottom:16px;">➕ Ajouter un produit</h3>
+        <form id="form-ajouter-boisson" onsubmit="ajouterBoisson(event)">
+          <div class="form-group">
+            <div><label>Désignation</label><input type="text" id="cat-nom" placeholder="Ex: PILS" required></div>
+            <div><label>Catégorie</label>
+              <select id="cat-categorie">
+                <option value="Bière">Bière</option>
+                <option value="Sucrerie">Sucrerie</option>
+                <option value="Eau">Eau</option>
+                <option value="Vin">Vin</option>
+                <option value="Whisky">Whisky</option>
+                <option value="Énergie">Énergie</option>
+              </select>
+            </div>
+            <div><label>Type Bouteille</label>
+              <select id="cat-type">
+                <option value="grand bouteille">Grand format (C12)</option>
+                <option value="petit bouteille">Petit format (C24)</option>
+              </select>
+            </div>
+            <div><label>Prix d'un cassier</label><input type="number" id="cat-pu-initial" min="0" required></div>
+            <div><label>Prix unitaire vente</label><input type="number" id="cat-prix-unitaire" min="0" required></div>
+            <div><label>Stock initial</label><input type="number" id="cat-stock" placeholder="0" min="0"></div>
+            <div><label>Seuil d'alerte</label><input type="number" id="cat-seuil" placeholder="6" min="1"></div>
+          </div>
+          <button type="submit" class="btn">Enregistrer</button>
+        </form>
       </div>
-
-      <!-- Tableau livraisons -->
-      <div class="fourn-section-titre fourn-titre-livraison">📦 Historique des Livraisons</div>
-      <table>
-        <thead><tr>
-          <th>Date & Heure</th>
-          <th>Détail livraison</th>
-          <th>Montant livré</th>
-        </tr></thead>
-        <tbody id="fourn-livraisons-rows"></tbody>
-      </table>
-
-      
-
-      <div class="btn-group">
-        <button class="btn btn-info" onclick="telechargerPDFFournisseur()">⬇️ PDF</button>
-        <button class="btn btn-green" onclick="envoyerWhatsAppFournisseur()">📲 WhatsApp</button>
-        <button class="btn btn-danger" onclick="reinitialiserFournisseur()">🗑️ Réinitialiser</button>
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Liste des articles</h3>
+        <input type="text" id="search-catalogue" class="search-box" placeholder="🔍 Rechercher...">
+        <table id="table-catalogue">
+          <thead><tr>
+            <th>Désignation</th><th>Type</th><th>Catégorie</th>
+            <th>Prix Cassier</th><th>Prix Vente Unit.</th>
+            <th>Stock</th><th>Statut</th><th>Actions</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
-  </div><!-- fin historique -->
-
-</div><!-- fin container -->
-
-<div id="rapport-serveuses" class="section">
-    <!-- Gestion serveuses — gérant seulement -->
-<div class="card gerant-only" style="margin-top:16px;">
-  <div class="card-header" style="background:#0f3d22;"><h3>👤 Gestion des Serveuses</h3></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:16px;align-items:end;">
-    <div style="display:flex;flex-direction:column;gap:5px;">
-      <label style="font-size:13px;font-weight:600;">Nom</label>
-      <input type="text" id="srv-nom" placeholder="Ex: Marie"
-        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
-    </div>
-    <div style="display:flex;flex-direction:column;gap:5px;">
-      <label style="font-size:13px;font-weight:600;">Code PIN (4-6 chiffres)</label>
-      <input type="password" id="srv-pin" placeholder="Ex: 1234" maxlength="6"
-        style="padding:9px;border:1px solid #ddd;border-radius:6px;">
-    </div>
-    <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
-  </div>
-  <div id="liste-serveuses-gestion"></div>
-</div>
-  <div class="card">
-    <div class="card-header" style="background:#0f3d22;">
-      <h3>📊 Rapport par Serveuse</h3>
-    </div>
-
-    <!-- Filtres -->
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:end;">
-      <div style="display:flex;flex-direction:column;gap:5px;">
-        <label style="font-size:13px;font-weight:600;">Période</label>
-        <select id="rapport-periode"
-          style="padding:9px;border:1px solid #ddd;border-radius:6px;font-size:14px;"
-          onchange="chargerRapportServeuses()">
-          <option value="today">Aujourd'hui</option>
-          <option value="week">7 derniers jours</option>
-          <option value="month">Ce mois</option>
-          <option value="all">Tout</option>
-        </select>
+    <!-- ===== ÉTAT STOCK ===== -->
+    <div id="etat-stock" class="section">
+      <div class="card">
+        <h3 style="margin-bottom:6px;">📊 État Général des Produits</h3>
+        <p style="font-size:13px; color:#888; margin-bottom:14px;">Lignes colorées selon l'état du stock</p>
+        <input type="text" id="search-stock" class="search-box" placeholder="🔍 Rechercher..." oninput="filtrerEtatStock()">
+        <table id="table-etat-produits">
+          <thead><tr>
+            <th>Désignation</th><th>Type</th><th>Catégorie</th>
+            <th>Stock Actuel</th><th>Seuil</th><th>Statut</th><th>Actions</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
-<button class="btn" onclick="chargerRapportServeuses()">🔄 Actualiser</button>
-<button class="btn btn-danger" onclick="reinitialiserVentesServeuse()">🗑️ Réinitialiser</button>&
     </div>
 
-    <!-- Stats globales -->
-    <div id="rapport-stats-globales" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;"></div>
+    <!-- ===== STOCKAGE / RÉCUP ===== -->
+    <div id="stockage-recup" class="section">
+      <div class="card">
+        <div style="display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap;">
+          <button id="btn-mode-appro" onclick="changerModeStockage('appro')" style="border:none; padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">📦 Approvisionnement fournisseur</button>
+          <button id="btn-mode-retour" onclick="changerModeStockage('retour')" style="border:none; padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">🔄 Retour client / Pertes</button>
+        </div>
+        <h3 id="stockage-titre" style="margin-top:0;">📦 Approvisionnement fournisseur</h3>
+        <p id="stockage-description" style="font-size:13px; color:#888; margin-bottom:16px;">💡 Gestion des stocks.</p>
+        <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+          <input type="text" id="search-stockage" class="search-box" style="max-width:320px;" placeholder="🔍 Rechercher..." oninput="afficherStockage()">
+        </div>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:2px solid #f0f0f0;">
+              <th style="color:#888; font-size:12px; text-transform:uppercase; padding:14px 10px; text-align:left;">Boisson</th>
+              <th style="color:#888; font-size:12px; text-transform:uppercase; padding:14px 10px; text-align:left;">Type</th>
+              <th style="color:#888; font-size:12px; text-transform:uppercase; padding:14px 10px; text-align:center;">Stock</th>
+              <th id="th-dynamique-prix" style="color:#888; font-size:12px; text-transform:uppercase; padding:14px 10px; text-align:left;">Prix Cassier</th>
+              <th id="th-dynamique-action" style="color:#888; font-size:12px; text-transform:uppercase; padding:14px 10px; text-align:left;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-stockage"></tbody>
+        </table>
+        <div id="zone-total-fournisseur" style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:14px; border:1px solid #e2e8f0; border-radius:8px; margin-top:14px; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span>💰 <strong>Montant total dû au fournisseur :</strong></span>
+            <span id="total-fournisseur-stockage" style="font-size:18px; font-weight:bold; color:#2e7d32;">0 FCFA</span>
+            <button style="background:none; border:none; cursor:pointer; font-size:16px;" onclick="modifierPrixTotalFournisseurStockage()" title="Modifier">✏️</button>
+          </div>
+          <button class="btn" onclick="envoyerTotalVersHistoriqueFournisseur()">🚀 Valider comme Versement</button>
+        </div>
+      </div>
+    </div>
 
-    <!-- Tableau par serveuse -->
-    <div id="rapport-serveuses-contenu"></div>
+    <!-- ===== CAISSE VENTES ===== -->
+    <div id="ventes" class="section">
+      <div class="vente-layout">
+        <div class="vente-produits">
+          <div class="card">
+            <h3 style="margin-bottom:14px;">Sélection des boissons</h3>
+            <input type="text" id="search-ventes" class="search-box" placeholder="🔍 Rechercher...">
+            <div id="liste-produits-vente" class="liste-grid"></div>
+          </div>
+        </div>
+        <div class="vente-ticket">
+          <div class="ticket-sticky">
+            <div class="card" style="border-top:4px solid var(--primary);">
+              <h3 style="margin-top:0;">🧾 Ticket de Caisse</h3>
+              <div id="ticket-detail"></div>
+              <div class="ticket-total-box">
+                <span>TOTAL :</span>
+                <span id="total-montant">0 FCFA</span>
+              </div>
+              <div class="ticket-recap-fin">
+                <span>Coût achat : <span id="recap-bbc">0 FCFA</span></span>
+                <span>Bénéfice : <strong id="recap-benef" style="color:var(--primary);">0 FCFA</strong></span>
+              </div>
+              <div class="ticket-actions">
+                <button class="btn btn-danger" style="flex:1;" onclick="annulerVente()">✖ Vider</button>
+                <button class="btn" style="flex:2; font-size:16px;" onclick="ouvrirModalVente()">✅ Encaisser</button>
+              </div>
+              <div id="btn-envoyer-table-wrapper" style="margin-top:8px; display:none;">
+                <button class="btn" style="width:100%; background:#0288d1;" onclick="ouvrirModalEnvoyerTable()">
+                  📋 Envoyer vers une table
+                </button>
+              </div>
+            </div>
+            <div class="card derniere-vente-card">
+              <div class="derniere-vente-label">🔙 Dernière vente enregistrée</div>
+              <div id="derniere-vente-info" class="derniere-vente-info">—</div>
+              <button class="btn btn-warning" style="width:100%; font-size:13px;" onclick="annulerDerniereVente()">↩️ Annuler la dernière vente</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== COMMANDES ===== -->
+    <div id="commandes" class="section">
+      <div class="card">
+        <div class="card-header" style="background:#1a6b3a;"><h3>🧾 Commandes en cours</h3></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-bottom:20px; align-items:end;">
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label style="font-size:13px; font-weight:600;">Numéro de table</label>
+            <input type="text" id="cmd-table" placeholder="Ex: Table 3, Bar, Terrasse..."
+              style="padding:9px; border:1px solid #ddd; border-radius:6px; font-size:14px;">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label style="font-size:13px; font-weight:600;">Nom client (optionnel)</label>
+            <input type="text" id="cmd-client" placeholder="Ex: Jean, Groupe VIP..."
+              style="padding:9px; border:1px solid #ddd; border-radius:6px; font-size:14px;">
+          </div>
+          <button class="btn" onclick="ouvrirNouvelleCommande()" style="white-space:nowrap;">➕ Nouvelle commande</button>
+        </div>
+        <div id="commandes-liste"></div>
+      </div>
+    </div>
+
+    <!-- ===== HISTORIQUE ===== -->
+    <div id="historique" class="section">
+      <div id="stats-historique" class="stats-container"></div>
+      <div class="card">
+        <div class="card-header"><h3>📋 Historique des Ventes de la Caisse</h3></div>
+        <div class="histo-filtres">
+          <div>
+            <label>🔍 Boisson</label>
+            <input type="text" id="filtre-histo-boisson" placeholder="Nom..." oninput="afficherHistorique()">
+          </div>
+          <div>
+            <label>📅 Date (JJ/MM/AAAA)</label>
+            <input type="text" id="filtre-histo-date" placeholder="Ex: 08/06/2026" oninput="afficherHistorique()">
+          </div>
+          <div>
+            <label>🏷️ Type</label>
+            <select id="filtre-histo-type" onchange="afficherHistorique()">
+              <option value="">Tous</option>
+              <option value="vente">💰 Ventes</option>
+              <option value="retour">🔄 Retours</option>
+              <option value="perte">⚠️ Pertes</option>
+              <option value="fournisseur">💳 Fournisseur</option>
+            </select>
+          </div>
+          <div style="align-self:flex-end;">
+            <button class="btn btn-grey btn-sm" onclick="reinitialiserFiltres()">✖ Effacer</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Date & Heure</th><th>Articles vendus</th><th>Total Encaissé</th>
+              <th>Benefice</th><th>benefice net</th><th>Note</th>
+            </tr>
+          </thead>
+          <tbody id="historique-ventes-rows"></tbody>
+        </table>
+        <div class="btn-group">
+          <button class="btn btn-info" onclick="telechargerPDFVentes()">⬇️ PDF</button>
+          <button class="btn btn-green" onclick="envoyerWhatsAppVentes()">📲 WhatsApp</button>
+          <button class="btn btn-warning" onclick="exporterExcel()">📊 Excel</button>
+          <button class="btn btn-danger" onclick="reinitialiserVentes()">🗑️ Réinitialiser</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:14px;">📈 Ventes des 7 derniers jours</h3>
+        <canvas id="graphique-ventes" height="110"></canvas>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ESPACE FOURNISSEUR -->
+      <div class="card">
+        <div class="card-header" style="background:#388e3c;"><h3>🏪 Suivi Fournisseur</h3></div>
+        <div class="fourn-bilan-box" id="fourn-bilan-box">
+          <div class="fourn-bilan-item fourn-bilan-livraisons">
+            <div class="fourn-bilan-label">📦 Total Livré</div>
+            <div class="fourn-bilan-val" id="fourn-total-livre">0 FCFA</div>
+          </div>
+          <div class="fourn-bilan-item fourn-bilan-paie">
+            <div class="fourn-bilan-label">💳 Total Payé</div>
+            <div class="fourn-bilan-val" id="fournisseur-bilan-paye">0 FCFA</div>
+          </div>
+        </div>
+        <div class="fourn-section-titre fourn-titre-livraison">📦 Enregistrer une livraison fournisseur</div>
+        <div style="display:grid; grid-template-columns:1fr 2fr auto; gap:10px; margin-bottom:18px; align-items:flex-end;">
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label>Montant de la livraison (FCFA)</label>
+            <input type="number" id="fourn-montant-livraison" placeholder="Ex: 75000" min="0" style="width:100%; box-sizing:border-box;">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label>Détail de la livraison</label>
+            <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12" style="width:100%; box-sizing:border-box;">
+          </div>
+          <button class="btn" onclick="enregistrerLivraisonFournisseur()" style="white-space:nowrap; align-self:flex-end;">📦 Enregistrer livraison</button>
+        </div>
+        <div class="fourn-section-titre fourn-titre-livraison">📦 Historique des Livraisons</div>
+        <table>
+          <thead><tr>
+            <th>Date & Heure</th><th>Détail livraison</th><th>Montant livré</th>
+          </tr></thead>
+          <tbody id="fourn-livraisons-rows"></tbody>
+        </table>
+        <div class="btn-group">
+          <button class="btn btn-info" onclick="telechargerPDFFournisseur()">⬇️ PDF</button>
+          <button class="btn btn-green" onclick="envoyerWhatsAppFournisseur()">📲 WhatsApp</button>
+          <button class="btn btn-danger" onclick="reinitialiserFournisseur()">🗑️ Réinitialiser</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== RAPPORT SERVEUSES ===== -->
+    <div id="rapport-serveuses" class="section">
+      <div class="card gerant-only" style="margin-top:16px;">
+        <div class="card-header" style="background:#0f3d22;"><h3>👤 Gestion des Serveuses</h3></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-bottom:16px; align-items:end;">
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label style="font-size:13px; font-weight:600;">Nom</label>
+            <input type="text" id="srv-nom" placeholder="Ex: Marie" style="padding:9px; border:1px solid #ddd; border-radius:6px;">
+          </div>
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label style="font-size:13px; font-weight:600;">Code PIN (4-6 chiffres)</label>
+            <input type="password" id="srv-pin" placeholder="Ex: 1234" maxlength="6" style="padding:9px; border:1px solid #ddd; border-radius:6px;">
+          </div>
+          <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
+        </div>
+        <div id="liste-serveuses-gestion"></div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="background:#0f3d22;"><h3>📊 Rapport par Serveuse</h3></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; align-items:end;">
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <label style="font-size:13px; font-weight:600;">Période</label>
+            <select id="rapport-periode" style="padding:9px; border:1px solid #ddd; border-radius:6px; font-size:14px;" onchange="chargerRapportServeuses()">
+              <option value="today">Aujourd'hui</option>
+              <option value="week">7 derniers jours</option>
+              <option value="month">Ce mois</option>
+              <option value="all">Tout</option>
+            </select>
+          </div>
+          <button class="btn" onclick="chargerRapportServeuses()">🔄 Actualiser</button>
+          <button class="btn btn-danger" onclick="reinitialiserVentesServeuse()">🗑️ Réinitialiser</button>
+        </div>
+        <div id="rapport-stats-globales" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;"></div>
+        <div id="rapport-serveuses-contenu"></div>
+      </div>
+    </div>
+
+    <!-- ===== CORBEILLE ===== -->
+    <div id="corbeille" class="section">
+      <div class="card">
+        <div class="card-header" style="background:#c62828;"><h3>🗑️ Corbeille — Boissons supprimées</h3></div>
+        <p style="font-size:13px; color:#888; margin-bottom:14px;">Les boissons ici peuvent être restaurées ou supprimées définitivement.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Désignation</th><th>Type</th><th>Catégorie</th><th>Supprimé le</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="corbeille-rows"></tbody>
+        </table>
+        <div class="btn-group" style="margin-top:14px;">
+          <button class="btn btn-danger" onclick="viderCorbeille()">🗑️ Vider la corbeille</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ===== PROFIL BAR ===== -->
+    <div id="profil" class="section">
+      <div class="card" style="max-width:600px; margin:0 auto;">
+        <div class="card-header" style="background:#0f3d22;"><h3>⚙️ Profil du Bar</h3></div>
+
+        <!-- Nom du bar -->
+        <div style="margin-bottom:24px;">
+          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">🏪 Nom du bar</h4>
+          <div style="display:flex; gap:10px; align-items:flex-end;">
+            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Nouveau nom</label>
+              <input type="text" id="profil-nom" placeholder="Nom actuel du bar"
+                style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+            </div>
+            <button onclick="changerNomBar()"
+              style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
+              💾 Enregistrer
+            </button>
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div style="margin-bottom:24px;">
+          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">📧 Adresse email</h4>
+          <div style="display:flex; gap:10px; align-items:flex-end;">
+            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Nouvel email</label>
+              <input type="email" id="profil-email" placeholder="Email actuel"
+                style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+            </div>
+            <button onclick="changerEmail()"
+              style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
+              💾 Enregistrer
+            </button>
+          </div>
+        </div>
+
+        <!-- Mot de passe -->
+        <div style="margin-bottom:24px;">
+          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">🔒 Mot de passe</h4>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Nouveau mot de passe</label>
+              <div style="position:relative;">
+                <input type="password" id="profil-password" placeholder="Min. 6 caractères"
+                  style="padding:10px; padding-right:40px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
+                <button type="button" onclick="toggleVoirPin('profil-password')"
+                  style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁</button>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Confirmer le mot de passe</label>
+              <div style="position:relative;">
+                <input type="password" id="profil-password-confirm" placeholder="Répétez le mot de passe"
+                  style="padding:10px; padding-right:40px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
+                <button type="button" onclick="toggleVoirPin('profil-password-confirm')"
+                  style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:16px;">👁</button>
+              </div>
+            </div>
+            <button onclick="changerMotDePasse()"
+              style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; align-self:flex-start;">
+              💾 Changer le mot de passe
+            </button>
+          </div>
+        </div>
+
+        <!-- PIN Gérant -->
+        <div style="margin-bottom:8px;">
+          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">🔐 PIN Gérant</h4>
+          <div style="display:flex; gap:10px; align-items:flex-end;">
+            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Nouveau PIN (4-6 chiffres)</label>
+              <input type="password" id="profil-pin" placeholder="Ex: 1234" maxlength="6"
+                style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:18px; letter-spacing:6px; width:160px; box-sizing:border-box;">
+            </div>
+            <button onclick="changerPinGerant()"
+              style="background:#d4a017; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
+              💾 Enregistrer
+            </button>
+          </div>
+        </div>
+
+        <div id="profil-message" style="display:none; margin-top:14px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600;"></div>
+      </div>
+    </div>
+
+  </div><!-- fin container -->
+
+  <!-- MODAL COMMANDE -->
+  <div class="modal-overlay" id="modal-commande">
+    <div class="modal-box" style="max-width:500px;">
+      <div class="modal-title" id="modal-cmd-titre">🧾 Commande — Table X</div>
+      <div id="modal-cmd-articles" style="margin-bottom:12px;"></div>
+      <div style="margin-bottom:12px;">
+        <input type="text" id="modal-cmd-search" placeholder="🔍 Chercher une boisson..."
+          oninput="filtrerBoissonsCommande()"
+          style="width:100%; padding:9px; border:1px solid #ddd; border-radius:6px; font-size:14px; box-sizing:border-box;">
+      </div>
+      <div id="modal-cmd-boissons" style="max-height:220px; overflow-y:auto; display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;"></div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; color:#888; font-weight:600;">📝 Note (facultatif)</label>
+        <input type="text" id="modal-cmd-note" placeholder="Ex: Sans glace, allergies..."
+          style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:13px; box-sizing:border-box; margin-top:4px;">
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-danger" onclick="fermerModalCommande()">✖ Fermer</button>
+        <button class="btn" onclick="sauvegarderCommande()">💾 Sauvegarder</button>
+        <button class="btn" style="background:#2e7d32;" onclick="encaisserCommande()">✅ Encaisser</button>
+      </div>
+    </div>
   </div>
-</div>
 
-
-<!-- Nouvelle section -->
-<div id="corbeille" class="section">
-  <div class="card">
-    <div class="card-header" style="background:#c62828;">
-      <h3>🗑️ Corbeille — Boissons supprimées</h3>
-    </div>
-    <p style="font-size:13px; color:#888; margin-bottom:14px;">
-      Les boissons ici peuvent être restaurées ou supprimées définitivement.
-    </p>
-    <table>
-      <thead>
-        <tr>
-          <th>Désignation</th>
-          <th>Type</th>
-          <th>Catégorie</th>
-          <th>Supprimé le</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="corbeille-rows"></tbody>
-    </table>
-    <div class="btn-group" style="margin-top:14px;">
-      <button class="btn btn-danger" onclick="viderCorbeille()">🗑️ Vider la corbeille</button>
+  <!-- MODAL CHOISIR TABLE -->
+  <div class="modal-overlay" id="modal-choisir-table">
+    <div class="modal-box">
+      <div class="modal-title">📋 Envoyer vers une table</div>
+      <div style="margin-bottom:12px; font-size:13px; color:#555;">Choisir la table qui reçoit les articles du panier :</div>
+      <div id="modal-tables-liste" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; margin-bottom:14px;"></div>
+      <div class="modal-btns">
+        <button class="btn btn-danger" onclick="fermerModalTable()">✖ Annuler</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- MODAL COMMANDE -->
-<div class="modal-overlay" id="modal-commande">
-  <div class="modal-box" style="max-width:500px;">
-    <div class="modal-title" id="modal-cmd-titre">🧾 Commande — Table X</div>
-    <div id="modal-cmd-articles" style="margin-bottom:12px;"></div>
-    <div style="margin-bottom:12px;">
-      <input type="text" id="modal-cmd-search" placeholder="🔍 Chercher une boisson..."
-        oninput="filtrerBoissonsCommande()"
-        style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box;">
-    </div>
-    <div id="modal-cmd-boissons"
-      style="max-height:220px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="font-size:12px;color:#888;font-weight:600;">📝 Note (facultatif)</label>
-      <input type="text" id="modal-cmd-note" placeholder="Ex: Sans glace, allergies..."
-        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-top:4px;">
-    </div>
-    <div class="modal-btns">
-      <button class="btn btn-danger" onclick="fermerModalCommande()">✖ Fermer</button>
-      <button class="btn" onclick="sauvegarderCommande()">💾 Sauvegarder</button>
-      <button class="btn" style="background:#2e7d32;" onclick="encaisserCommande()">✅ Encaisser</button>
-    </div>
-  </div>
-</div>
-<!-- MODAL CHOISIR TABLE -->
-<div class="modal-overlay" id="modal-choisir-table">
-  <div class="modal-box">
-    <div class="modal-title">📋 Envoyer vers une table</div>
-    <div style="margin-bottom:12px;font-size:13px;color:#555;">Choisir la table qui reçoit les articles du panier :</div>
-    <div id="modal-tables-liste" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;margin-bottom:14px;"></div>
-    <div class="modal-btns">
-      <button class="btn btn-danger" onclick="fermerModalTable()">✖ Annuler</button>
-    </div>
-  </div>
-</div>
+</div><!-- fin app-principale -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>

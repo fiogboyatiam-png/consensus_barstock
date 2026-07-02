@@ -1,10 +1,10 @@
-
-
 // ==================== SUPABASE ====================
 const SUPABASE_URL = "https://jwskhozdukcurjnpsgtm.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3c2tob3pkdWtjdXJqbnBzZ3RtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODA0NzcsImV4cCI6MjA5NjE1NjQ3N30.fLkpT9AK7mXdz6HxxVUKyK7fRNDHnjYNk4l_K-qBO30";
+const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3c2tob3pkdWtjdXJqbnBzZ3RtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDU4MDQ3NywiZXhwIjoyMDk2MTU2NDc3fQ.XBUNsxLpFxLhAhBV8ag0Czg0LOT48xvqIc1o6QJtmjI";
 const { createClient } = supabase;
 const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ==================== STATE ====================
 let boissons = [];
@@ -14,10 +14,10 @@ let filtreCatalogue = '';
 let filtreVentes = '';
 let modeStockage = 'appro';
 let graphiqueInstance = null;
-let commandeEnCours = []; // [{ designation, type, qte, cout }]
-let barActuel = null; // { id, nom, code_pin }
-let commandeActive = null; // commande en cours d'edition
-let commandesOuvertes = []; // liste des commandes chargees
+let commandeEnCours = [];
+let barActuel = null;
+let commandeActive = null;
+let commandesOuvertes = [];
 let realtimeActif = false;
 let utilisateurActuel = null;
 
@@ -49,10 +49,6 @@ function escape(str) {
   return div.innerHTML;
 }
 
-
-
-
-
 // ==================== MODE SOMBRE ====================
 function toggleDarkMode() {
   document.body.classList.toggle('dark');
@@ -79,24 +75,12 @@ function gererConnexion() {
   if (!navigator.onLine) banner.classList.add('visible');
 }
 
-// ==================== AUTHENTIFICATION MULTI-BAR ====================
+// ==================== AUTHENTIFICATION ====================
 
 function afficherEcranAuth() {
   document.getElementById('ecran-auth').style.display = 'flex';
   document.getElementById('app-principale').style.display = 'none';
-  afficherOngletAuth('connexion');
-}
-
-function afficherOngletAuth(onglet) {
-  const tabs = ['connexion', 'inscription'];
-  tabs.forEach(t => {
-    const btn = document.getElementById('tab-' + t);
-    const panel = document.getElementById('panel-' + t);
-    if (btn) btn.classList.toggle('tab-active', t === onglet);
-    if (panel) panel.style.display = t === onglet ? 'block' : 'none';
-  });
-  const erreur = document.getElementById('auth-erreur');
-  if (erreur) erreur.style.display = 'none';
+  document.getElementById('ecran-admin').style.display = 'none';
 }
 
 function afficherErreurAuth(msg) {
@@ -117,7 +101,6 @@ async function chargerBarUtilisateur(userId) {
     .eq('owner_id', userId)
     .order('created_at', { ascending: true })
     .limit(1);
-
   if (error) throw error;
   return bars && bars.length ? bars[0] : null;
 }
@@ -142,7 +125,6 @@ async function seConnecter() {
       return;
     }
 
-    
     const bar = await chargerBarUtilisateur(data.user.id);
     if (!bar) {
       await client.auth.signOut();
@@ -166,87 +148,9 @@ async function seConnecter() {
   }
 }
 
-// INSCRIPTION
-async function inscrireBar() {
-  const nom = (document.getElementById('ins-nom')?.value || '').trim();
-  const email = (document.getElementById('ins-email')?.value || '').trim();
-  const password = (document.getElementById('ins-password')?.value || '').trim();
-  const confirm = (document.getElementById('ins-password-confirm')?.value || '').trim();
-
-  if (!nom) { afficherErreurAuth('Le nom du bar est obligatoire.'); return; }
-  if (!email) { afficherErreurAuth("L'email est obligatoire."); return; }
-  if (!password || password.length < 6) { afficherErreurAuth('Le mot de passe doit avoir au moins 6 caracteres.'); return; }
-  if (password !== confirm) { afficherErreurAuth('Les mots de passe ne correspondent pas.'); return; }
-
-  const btnIns = document.getElementById('btn-inscription');
-  if (btnIns) { btnIns.disabled = true; btnIns.innerText = 'Creation...'; }
-
-  try {
-    const { data: authData, error: authError } = await client.auth.signUp({ email, password });
-    if (authError) throw authError;
-    if (!authData.user) throw new Error("Erreur lors de la creation du compte.");
-
-    const { data: existants, error: existError } = await client
-      .from('bars')
-      .select('id')
-      .eq('nom', nom);
-    if (existError) throw existError;
-    if (existants && existants.length > 0) {
-      afficherErreurAuth('Un bar avec ce nom existe deja.');
-      return;
-    }
-
-    const { data: nouveauBar, error: barError } = await client
-      .from('bars')
-      .insert([{ nom, owner_id: authData.user.id }])
-      .select()
-      .single();
-    if (barError) throw barError;
-
-    barActuel = nouveauBar;
-    localStorage.setItem('barstock_bar_id', barActuel.id);
-    localStorage.setItem('barstock_bar_nom', barActuel.nom);
-
-    const { data: modeles, error: modelesError } = await client.from('boissons_modele').select('*');
-    if (modelesError) throw modelesError;
-
-    if (modeles && modeles.length > 0) {
-      const copie = modeles.map(b => ({
-        designation: b.designation,
-        categorie: b.categorie,
-        type_bouteille: b.type_bouteille,
-        pu_initial: b.pu_initial,
-        prix_unitaire: b.prix_unitaire,
-        demi_cassier: b.demi_cassier || 0,
-        quart_cassier: b.quart_cassier || 0,
-        quantite_par_cassier: b.quantite_par_cassier,
-        seuil: b.seuil || 6,
-        stock: 0,
-        bar_id: nouveauBar.id
-      }));
-      const { error: copieError } = await client.from('boissons').insert(copie);
-      if (copieError) throw copieError;
-    }
-
-    const { error: configError } = await client
-      .from('config')
-      .insert([{ bar_id: nouveauBar.id, cle: 'total_fournisseur', valeur: '0' }]);
-    if (configError) throw configError;
-
-    toast('Bienvenue ' + nom + ' ! Votre compte est cree.');
-    lancerApplication();
-  } catch (err) {
-    afficherErreurAuth('Erreur : ' + err.message);
-  } finally {
-    if (btnIns) { btnIns.disabled = false; btnIns.innerText = 'Creer mon compte'; }
-  }
-}
-
 async function restaurerSession() {
-  
-  
   try {
-     const exp = parseInt(localStorage.getItem('barstock_expiration') || '0');
+    const exp = parseInt(localStorage.getItem('barstock_expiration') || '0');
     if (exp && Date.now() > exp) {
       await client.auth.signOut();
       localStorage.removeItem('barstock_expiration');
@@ -260,7 +164,7 @@ async function restaurerSession() {
 
     if (session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') { afficherInterfaceAdmin(); return; }
 
-   const bar = await chargerBarUtilisateur(session.user.id);
+    const bar = await chargerBarUtilisateur(session.user.id);
     if (!bar) { afficherEcranAuth(); return; }
 
     if (bar.actif === false) {
@@ -278,36 +182,76 @@ async function restaurerSession() {
   }
 }
 
+// ==================== SUPER ADMIN ====================
+
 async function afficherInterfaceAdmin() {
   document.getElementById('ecran-auth').style.display = 'none';
   document.getElementById('ecran-admin').style.display = 'block';
+  document.getElementById('app-principale').style.display = 'none';
+  document.getElementById('ecran-role').style.display = 'none';
+  await chargerTableauAdmin();
+}
 
-  const { data: bars, error: errBars } = await client
+async function chargerTableauAdmin() {
+  const tbody = document.getElementById('admin-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">Chargement...</td></tr>';
+
+  // Récupérer tous les bars
+  const { data: bars, error: errBars } = await adminClient
     .from('bars')
-    .select('id, nom, actif, created_at')
+    .select('id, nom, actif, created_at, owner_id')
     .order('created_at', { ascending: false });
 
   if (errBars) { alert('Erreur chargement bars : ' + errBars.message); return; }
 
-  const { data: serveuses } = await client.from('serveuses').select('bar_id');
-  const compteurs = {};
-  (serveuses || []).forEach(s => {
-    compteurs[s.bar_id] = (compteurs[s.bar_id] || 0) + 1;
+  // Récupérer les emails via adminClient (auth.users n'est pas accessible depuis le client)
+  // On utilise la table bars avec colonne email si dispo, sinon on affiche owner_id
+  const users = [];
+
+  // Récupérer tous les PIN gérants
+  const { data: configs } = await adminClient.from('config').select('bar_id, cle, valeur').eq('cle', 'pin_gerant');
+  const pinsGerant = {};
+  (configs || []).forEach(c => { pinsGerant[c.bar_id] = c.valeur; });
+
+  // Récupérer toutes les serveuses
+  const { data: toutesServeuses } = await adminClient.from('serveuses').select('bar_id, nom, code_pin');
+  const serveusesByBar = {};
+  (toutesServeuses || []).forEach(s => {
+    if (!serveusesByBar[s.bar_id]) serveusesByBar[s.bar_id] = [];
+    serveusesByBar[s.bar_id].push(s);
   });
 
-  const tbody = document.getElementById('admin-tbody');
-  tbody.innerHTML = (bars || []).map(b => {
+  if (!tbody) return;
+  if (!bars || bars.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="vide">Aucun bar enregistré</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = bars.map(b => {
     const date = new Date(b.created_at).toLocaleDateString('fr-FR');
-    const nbServeuses = compteurs[b.id] || 0;
+    const email = b.email || '<em style="color:#aaa;font-size:11px;">Voir Supabase Auth</em>';
+    const pin = pinsGerant[b.id] || '<em style="color:#aaa;">Non défini</em>';
+    const serveuses = serveusesByBar[b.id] || [];
+    const serveusesTxt = serveuses.length === 0
+      ? '<em style="color:#aaa;">Aucune</em>'
+      : serveuses.map(s => `<span style="display:inline-block;background:#e8f5e9;border-radius:4px;padding:2px 6px;margin:2px;font-size:12px;">👤 ${escape(s.nom)} — PIN: <strong>${s.code_pin}</strong></span>`).join('');
     const statutTxt = b.actif ? 'Actif' : 'Désactivé';
     const statutCouleur = b.actif ? '#2e7d32' : '#c62828';
     const btnTxt = b.actif ? 'Désactiver' : 'Activer';
-    return `<tr>
-      <td>${escape(b.nom)}</td>
-      <td>${date}</td>
-      <td>${nbServeuses}</td>
-      <td style="color:${statutCouleur};font-weight:600;">${statutTxt}</td>
-      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" class="btn-toggle-bar">${btnTxt}</button></td>
+    const btnCoul = b.actif ? '#c62828' : '#2e7d32';
+
+    return `<tr style="border-bottom:1px solid #eee;vertical-align:top;">
+      <td style="padding:12px;font-weight:700;">${escape(b.nom)}</td>
+      <td style="padding:12px;font-size:13px;color:#555;">${email}</td>
+      <td style="padding:12px;font-size:13px;color:#555;">${date}</td>
+      <td style="padding:12px;font-size:13px;"><span style="background:#fff3e0;border-radius:4px;padding:3px 8px;font-weight:700;color:#e65100;">${pin}</span></td>
+      <td style="padding:12px;font-size:13px;">${serveusesTxt}</td>
+      <td style="padding:12px;font-weight:600;color:${statutCouleur};">${statutTxt}</td>
+      <td style="padding:12px;">
+        <button data-bar-id="${b.id}" data-bar-actif="${b.actif}"
+          style="background:${btnCoul};color:white;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;"
+          class="btn-toggle-bar">${btnTxt}</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -316,19 +260,106 @@ async function afficherInterfaceAdmin() {
       const id = btn.getAttribute('data-bar-id');
       const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
       btn.disabled = true;
-      const { error } = await client.from('bars').update({ actif: !actifActuel }).eq('id', id);
+      const { error } = await adminClient.from('bars').update({ actif: !actifActuel }).eq('id', id);
       btn.disabled = false;
       if (error) { alert('Erreur : ' + error.message); return; }
-      afficherInterfaceAdmin();
+      chargerTableauAdmin();
     });
   });
 }
 
+// CRÉER UN BAR (super admin)
+async function creerBar() {
+  const nom = (document.getElementById('new-bar-nom')?.value || '').trim();
+  const email = (document.getElementById('new-bar-email')?.value || '').trim();
+  const password = (document.getElementById('new-bar-password')?.value || '').trim();
+
+  if (!nom) { afficherErreurAdmin('Le nom du bar est obligatoire.'); return; }
+  if (!email) { afficherErreurAdmin("L'email est obligatoire."); return; }
+  if (!password || password.length < 6) { afficherErreurAdmin('Le mot de passe doit avoir au moins 6 caractères.'); return; }
+
+  const btn = document.getElementById('btn-creer-bar');
+  if (btn) { btn.disabled = true; btn.innerText = 'Création...'; }
+
+  try {
+    // 1. Vérifier qu'aucun bar avec ce nom n'existe déjà (via adminClient qui bypass RLS)
+    const { data: existants } = await adminClient.from('bars').select('id').eq('nom', nom);
+    if (existants && existants.length > 0) {
+      throw new Error('Un bar avec ce nom existe déjà.');
+    }
+
+    // 2. Créer le compte via signUp (fonctionne depuis navigateur)
+    //    On utilise un client temporaire pour ne pas déconnecter le super admin
+    const tempClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const { data: authData, error: authError } = await tempClient.auth.signUp({ email, password });
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Erreur lors de la création du compte.');
+
+    const newUserId = authData.user.id;
+
+    // 3. Créer le bar via adminClient (bypass RLS — le owner_id n'est pas l'admin)
+    const { data: nouveauBar, error: barError } = await adminClient
+      .from('bars')
+      .insert([{ nom, owner_id: newUserId, email }])
+      .select()
+      .single();
+    if (barError) throw barError;
+
+    // 4. Copier le catalogue modèle
+    const { data: modeles } = await adminClient.from('boissons_modele').select('*');
+    if (modeles && modeles.length > 0) {
+      const copie = modeles.map(b => ({
+        designation: b.designation,
+        categorie: b.categorie,
+        type_bouteille: b.type_bouteille,
+        pu_initial: b.pu_initial,
+        prix_unitaire: b.prix_unitaire,
+        demi_cassier: b.demi_cassier || 0,
+        quart_cassier: b.quart_cassier || 0,
+        quantite_par_cassier: b.quantite_par_cassier,
+        seuil: b.seuil || 6,
+        stock: 0,
+        bar_id: nouveauBar.id
+      }));
+      await adminClient.from('boissons').insert(copie);
+    }
+
+    // 5. Config initiale
+    await adminClient.from('config').insert([{ bar_id: nouveauBar.id, cle: 'total_fournisseur', valeur: '0' }]);
+
+    // Vider le formulaire
+    document.getElementById('new-bar-nom').value = '';
+    document.getElementById('new-bar-email').value = '';
+    document.getElementById('new-bar-password').value = '';
+    document.getElementById('admin-erreur').style.display = 'none';
+
+    toast('✅ Bar "' + nom + '" créé avec succès !');
+    await chargerTableauAdmin();
+
+  } catch (err) {
+    afficherErreurAdmin('Erreur : ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '➕ Créer le bar'; }
+  }
+}
+
+function afficherErreurAdmin(msg) {
+  const el = document.getElementById('admin-erreur');
+  if (el) { el.innerText = msg; el.style.display = 'block'; }
+}
+
+async function seDeconnecterAdmin() {
+  await client.auth.signOut();
+  afficherEcranAuth();
+}
+
+// ==================== LANCER APP ====================
 function lancerApplication() {
   const expiration = Date.now() + (8 * 60 * 60 * 1000);
   localStorage.setItem('barstock_expiration', expiration.toString());
-  afficherEcranRole(); // ← passe par le choix de rôle
+  afficherEcranRole();
 }
+
 async function seDeconnecter() {
   if (!confirm(`Deconnecter ${barActuel?.nom} ?`)) return;
   await client.auth.signOut();
@@ -338,35 +369,31 @@ async function seDeconnecter() {
   localStorage.removeItem('barstock_expiration');
   boissons = []; panier = {}; historique = [];
   client.removeAllChannels();
-realtimeActif = false;
+  realtimeActif = false;
   afficherEcranAuth();
 }
-
-
 
 // ==================== INIT ====================
 async function initialiserApplication() {
   if (!barActuel) return;
   try {
     const { data: db, error: eB } = await client
-  .from('boissons').select('*')
-  .eq('bar_id', barActuel.id)
-  .eq('supprime', false)   // ← exclure les supprimées
-  .order('designation', { ascending: true });
+      .from('boissons').select('*')
+      .eq('bar_id', barActuel.id)
+      .eq('supprime', false)
+      .order('designation', { ascending: true });
     if (eB) throw eB;
     boissons = db || [];
 
     const { data: dv, error: eV } = await client
       .from('ventes')
-      // APRÈS
-.select('id, total, benefice, benef, note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
-.eq('bar_id', barActuel.id)
-.order('created_at', { ascending: false })
-.limit(200)
+      .select('id, total, benefice, benef, note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
+      .eq('bar_id', barActuel.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (eV) throw eV;
 
     historique = (dv || []).map(v => {
-      // Toujours utiliser created_at (timestamp serveur fiable)
       let dateAff = v.created_at
         ? new Date(v.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
         : (v.date || 'Date inconnue');
@@ -378,20 +405,15 @@ async function initialiserApplication() {
           if (Array.isArray(a)) arts = a.map(x => ({ nom: x.designation || x.nom, qte: x.qte || x.quantite }));
         } catch { arts = [{ nom: "📦 PAIEMENT FOURNISSEUR", qte: 1 }]; }
       }
-      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '',articles: arts };
+      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts };
     });
 
     mettreAJourStatsDuJour();
     rafrachirVueActive();
-    await chargerCommandes();    
-    
+    await chargerCommandes();
   } catch(err) {
-  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-    console.error(err); // seulement en dev
+    toast('❌ Une erreur est survenue.', 'error');
   }
-  toast('❌ Une erreur est survenue.', 'error');
-}
-
 }
 
 // ==================== STATS DU JOUR ====================
@@ -428,13 +450,14 @@ function rafrachirVueActive() {
     if (utilisateurActuel?.role === 'gerant') chargerListeServeuses();
   }
   else if (id === 'stockage-recup') afficherStockage();
- else if (id === 'ventes') { 
-  setTimeout(() => { afficherVentes(); mettreAJourTicket(); afficherDerniereVente(); }, 50);
-}
+  else if (id === 'ventes') {
+    setTimeout(() => { afficherVentes(); mettreAJourTicket(); afficherDerniereVente(); }, 50);
+  }
   else if (id === 'commandes') chargerCommandes();
   else if (id === 'rapport-serveuses') chargerRapportServeuses();
   else if (id === 'historique') { afficherHistorique(); chargerEspaceFournisseur(); dessinerGraphique(); }
 }
+
 function showSection(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -444,6 +467,7 @@ function showSection(id) {
   else if (id === 'commandes') chargerCommandes();
   else if (id === 'rapport-serveuses') chargerRapportServeuses();
   else if (id === 'historique') { afficherHistorique(); chargerEspaceFournisseur(); dessinerGraphique(); }
+  else if (id === 'profil') chargerProfilBar();
   else rafrachirVueActive();
 }
 
@@ -462,7 +486,6 @@ function statsCatalogue() {
 
 function afficherCatalogue() {
   filtreCatalogue = (document.getElementById('search-catalogue') || { value:'' }).value || filtreCatalogue;
-  
   const terme = filtreCatalogue.toLowerCase();
   const fil = boissons.filter(b => b.designation.toLowerCase().includes(terme));
   const tbody = document.querySelector('#table-catalogue tbody'); if (!tbody) return;
@@ -480,7 +503,7 @@ async function modifierStock(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Stock de ${b.designation}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<0) { alert("❌ Nombre valide requis"); return; }
-  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id);if (error) throw error; toast(`✅ Stock ${b.designation} → ${n}`); await initialiserApplication(); }
+  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Stock ${b.designation} → ${n}`); await initialiserApplication(); }
   catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -548,22 +571,11 @@ async function supprimerBoisson(id) {
 
 async function chargerCorbeille() {
   const { data, error } = await client.from('boissons')
-    .select('*')
-    .eq('bar_id', barActuel.id)
-    .eq('supprime', true)
+    .select('*').eq('bar_id', barActuel.id).eq('supprime', true)
     .order('supprime_le', { ascending: false });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-
-  const tbody = document.getElementById('corbeille-rows');
-  if (!tbody) return;
-
-  if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="vide">🗑️ Corbeille vide</td></tr>';
-    
-    return;
-    
-  }
-
+  const tbody = document.getElementById('corbeille-rows'); if (!tbody) return;
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vide">🗑️ Corbeille vide</td></tr>'; return; }
   tbody.innerHTML = data.map(b => `
     <tr>
       <td><strong>${escape(b.designation)}</strong></td>
@@ -571,23 +583,19 @@ async function chargerCorbeille() {
       <td>${escape(b.categorie || '-')}</td>
       <td style="color:#888;font-size:13px;">🕐 ${escape(b.supprime_le || '-')}</td>
       <td>
-        <button class="btn btn-sm" onclick="restaurerBoisson(${b.id})" title="Restaurer">♻️ Restaurer</button>
-        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})" title="Supprimer définitivement">🗑️ Supprimer</button>
+        <button class="btn btn-sm" onclick="restaurerBoisson(${b.id})">♻️ Restaurer</button>
+        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})">🗑️ Supprimer</button>
       </td>
     </tr>`).join('');
-    
 }
 
 async function restaurerBoisson(id) {
   if (!confirm("Restaurer cette boisson dans le catalogue ?")) return;
   try {
-    const { error } = await client.from('boissons')
-      .update({ supprime: false, supprime_le: null })
-      .eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.from('boissons').update({ supprime: false, supprime_le: null }).eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
     toast('♻️ Boisson restaurée !', 'info');
-    await initialiserApplication();
-    chargerCorbeille();
+    await initialiserApplication(); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
@@ -595,72 +603,37 @@ async function supprimerDefinitivement(id) {
   if (!confirm("⚠️ Supprimer définitivement ? Cette action est IRRÉVERSIBLE.")) return;
   if (!confirm("🔴 Dernière confirmation — continuer ?")) return;
   try {
-    const { error } = await client.from('boissons')
-      .delete().eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.from('boissons').delete().eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
-    toast('🗑️ Boisson supprimée définitivement', 'warning');
-    chargerCorbeille();
+    toast('🗑️ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function viderCorbeille() {
   if (!confirm("⚠️ Vider toute la corbeille définitivement ?")) return;
   try {
-    const { error } = await client.from('boissons')
-      .delete().eq('bar_id', barActuel.id).eq('supprime', true);
+    const { error } = await client.from('boissons').delete().eq('bar_id', barActuel.id).eq('supprime', true);
     if (error) throw error;
-    toast('🗑️ Corbeille vidée', 'warning');
-    chargerCorbeille();
+    toast('🗑️ Corbeille vidée', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
+
 function activerRealtime() {
-  if (realtimeActif) return; 
+  if (realtimeActif) return;
   realtimeActif = true;
-  // Écoute les changements de stock
   client.channel('stock-live')
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'boissons',
-      filter: `bar_id=eq.${barActuel.id}`
-    }, payload => {
-      // Met à jour la boisson localement sans recharger toute la page
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'boissons', filter: `bar_id=eq.${barActuel.id}` }, payload => {
       const index = boissons.findIndex(b => b.id === payload.new.id);
-      if (payload.eventType === 'UPDATE' && index !== -1) {
-        boissons[index] = { ...boissons[index], ...payload.new };
-        rafrachirVueActive();
-      }
-    })
-    .subscribe();
-
-  // Écoute les nouvelles commandes et modifications
+      if (payload.eventType === 'UPDATE' && index !== -1) { boissons[index] = { ...boissons[index], ...payload.new }; rafrachirVueActive(); }
+    }).subscribe();
   client.channel('commandes-live')
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'commandes',
-      filter: `bar_id=eq.${barActuel.id}`
-    }, payload => {
-      chargerCommandes(); // recharge la liste des tables
-    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'commandes', filter: `bar_id=eq.${barActuel.id}` }, () => { chargerCommandes(); })
     .subscribe();
-
-  // Écoute les nouvelles ventes (pour l'historique et les stats)
   client.channel('ventes-live')
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'ventes',
-      filter: `bar_id=eq.${barActuel.id}`
-    }, payload => {
-      // Recharge l'historique si la section est active
-      if (document.getElementById('historique')?.classList.contains('active')) {
-        afficherHistorique();
-      }
-      // Met à jour les stats du jour dans le header
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ventes', filter: `bar_id=eq.${barActuel.id}` }, () => {
+      if (document.getElementById('historique')?.classList.contains('active')) afficherHistorique();
       mettreAJourStatsDuJour();
-    })
-    .subscribe();
+    }).subscribe();
 }
 
 // ==================== ÉTAT STOCK ====================
@@ -670,8 +643,7 @@ function afficherEtatProduits() {
   const tbody = document.querySelector('#table-etat-produits tbody'); if (!tbody) return;
   if (fil.length===0) { tbody.innerHTML='<tr><td colspan="7" class="vide">Aucun produit</td></tr>'; return; }
   tbody.innerHTML = fil.map(b => {
-    const seuil = b.seuil||6;
-    let rs='', st='';
+    const seuil = b.seuil||6; let rs='', st='';
     if (b.stock===0) { rs='class="row-rupture;"'; st='<span class="tag tag-rouge">🔴 RUPTURE</span>'; }
     else if (b.stock<=seuil) { rs='class="row-alerte;"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
     else { rs='class="row-ok;"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
@@ -709,12 +681,8 @@ function afficherStockage() {
   if (zF) zF.style.display = (modeStockage==='appro') ? 'flex' : 'none';
   if (modeStockage==='appro') {
     const tfEl = document.getElementById('total-fournisseur-stockage');
-    // ✅ APRÈS — avec bar_id
-client.from('config').select('valeur')
-  .eq('cle','total_fournisseur')
-  .eq('bar_id', barActuel.id)
-  .single()
-  .then(({data})=>{if(data&&tfEl)tfEl.innerText=formatPrix(parseInt(data.valeur)||0);});
+    client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single()
+      .then(({data})=>{if(data&&tfEl)tfEl.innerText=formatPrix(parseInt(data.valeur)||0);});
   }
   const terme = (document.getElementById('search-stockage')||{value:''}).value.toLowerCase();
   const fil = boissons.filter(b => b.designation.toLowerCase().includes(terme));
@@ -732,9 +700,7 @@ client.from('config').select('valeur')
       ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm" style="background:#e1f5fe;color:#0288d1;border:1px solid #b3e5fc;border-radius:20px;" onclick="ajusterRetour(${b.id},1)">🔄 +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">⚠️ -1 Perte</button></div>`;
     }
     return `<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:14px 10px;font-weight:bold;">${escape(b.designation)}</td><td style="padding:14px 10px;"><span class="tag-type">${lbl}</span></td><td style="padding:14px 10px;text-align:center;"><span style="display:inline-block;padding:6px 12px;border:1px solid #e0e0e0;border-radius:20px;font-weight:bold;">${b.stock}</span></td><td style="padding:14px 10px;font-size:13px;">${cp}</td><td style="padding:14px 10px;">${ca}</td></tr>`;
-    rafraichirIcones();
   };
-
   let html='';
   if (grands.length>0) html+=`<tr style="background:#f8fafc;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #475569;">👑 GRANDS MODÈLES</td></tr>`+grands.map(gen).join('');
   if (petits.length>0) html+=`<tr style="background:#f0f9ff;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #0288d1;">🧪 PETITS MODÈLES</td></tr>`+petits.map(gen).join('');
@@ -751,25 +717,11 @@ async function entreeStock(id, type) {
   else if (type==='quart') { qte=Math.round(qpc/4); cout=b.quart_cassier||Math.round(b.pu_initial/4); txt="un quart-cassier"; }
   if (!confirm(`Ajouter ${txt} (${qte} btl) pour ${b.designation} ?`)) return;
   try {
-    const { error:eS } = await client.from('boissons')
-      .update({ stock:b.stock+qte })
-      .eq('id', id).eq('bar_id', barActuel.id); // ← bar_id ajouté
+    const { error:eS } = await client.from('boissons').update({ stock:b.stock+qte }).eq('id', id).eq('bar_id', barActuel.id);
     if (eS) throw eS;
-
-    // Lire le total actuel pour CE bar uniquement
-    const { data:cfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle','total_fournisseur')
-      .eq('bar_id', barActuel.id) // ← bar_id ajouté
-      .single();
+    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
     const nv=(cfg?parseInt(cfg.valeur)||0:0)+cout;
-
-    // Mettre à jour pour CE bar uniquement
-    await client.from('config')
-      .update({ valeur:nv.toString() })
-      .eq('cle','total_fournisseur')
-      .eq('bar_id', barActuel.id); // ← update au lieu de upsert
-
+    await client.from('config').update({ valeur:nv.toString() }).eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
     const existing=commandeEnCours.find(c=>c.designation===b.designation&&c.type===txt);
     if (existing) { existing.qte+=qte; existing.cout+=cout; }
     else commandeEnCours.push({ designation:b.designation, type:txt, qte, cout });
@@ -790,8 +742,7 @@ async function ajusterRetour(id, delta) {
   if (!confirm(msg)) return;
   try {
     const { error: eS } = await client.from('boissons').update({ stock: b.stock+delta }).eq('id', id); if (eS) throw eS;
-    const note = '';
-   const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note}]).select().single(); if (eH) throw eH;
+    const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note:''}]).select().single(); if (eH) throw eH;
     await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:typeOp, quantite:1, prix_unitaire:tImpact }]);
     toast(delta>0?'🔄 Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
     await initialiserApplication();
@@ -856,6 +807,7 @@ function mettreAJourTicket() {
   set('total-montant', formatPrix(tv)); set('recap-bbc', formatPrix(ta)); set('recap-benef', formatPrix(tv - ta));
   if (wrapper) wrapper.style.display = (Object.keys(panier).length > 0 && commandesOuvertes.length > 0) ? 'block' : 'none';
 }
+
 function afficherDerniereVente() {
   const el = document.getElementById('derniere-vente-info'); if (!el) return;
   const vr = historique.filter(v => !estSpecial(v));
@@ -891,23 +843,13 @@ async function confirmerVenteFinale() {
   await validerVente(note);
 }
 
-
 async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
-  // Vérification stock en temps réel avant encaissement
   const ids = Object.keys(panier).map(Number);
-  const { data: stockFrais } = await client.from('boissons')
-    .select('id, stock, designation')
-    .in('id', ids)
-    .eq('bar_id', barActuel.id);
-
+  const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
   for (const b of stockFrais || []) {
     const qte = panier[b.id];
-    if (qte > b.stock) {
-      toast(`❌ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'error');
-      await initialiserApplication(); // recharge les vrais stocks
-      return;
-    }
+    if (qte > b.stock) { toast(`❌ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'error'); await initialiserApplication(); return; }
   }
   let tv=0, tb=0; const arts=[];
   for (const id in panier) {
@@ -919,30 +861,18 @@ async function validerVente(note = '') {
   }
   try {
     const { data: tr, error } = await client.from('ventes')
-  .insert([{
-    total:tv, benefice:tb, benef:tb, bar_id:barActuel.id,
-    note: note || null,
-    serveuse: utilisateurActuel?.nom || null
-  }])
+      .insert([{ total:tv, benefice:tb, benef:tb, bar_id:barActuel.id, note: note || null, serveuse: utilisateurActuel?.nom || null }])
       .select().single();
     if (error) throw error;
     for (const art of arts) {
-      const { error:eA } = await client.from('vente_articles').insert([{
-        vente_id:tr.id, boisson_designation:art.designation,
-        quantite:art.quantite, prix_unitaire:art.prix_unitaire,
-        bar_id:barActuel.id
-      }]);
-      if (eA) throw eA;
-      const { error:eS } = await client.from('boissons')
-        .update({ stock:art.stockActuel-art.quantite })
-        .eq('id', art.id).eq('bar_id', barActuel.id);
-      if (eS) throw eS;
+      await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:art.designation, quantite:art.quantite, prix_unitaire:art.prix_unitaire, bar_id:barActuel.id }]);
+      await client.from('boissons').update({ stock:art.stockActuel-art.quantite }).eq('id', art.id).eq('bar_id', barActuel.id);
     }
     const noteEl = document.getElementById('note-vente');
     if (noteEl) noteEl.value = '';
     toast('✅ Vente enregistrée ! '+formatPrix(tv)); panier={};
     await initialiserApplication();
-  } catch (err) { console.error(err); toast('❌ Erreur vente : '+err.message,'error'); }
+  } catch (err) { toast('❌ Erreur vente : '+err.message,'error'); }
 }
 
 function annulerVente() {
@@ -976,9 +906,6 @@ function reinitialiserFiltres() {
 }
 
 function afficherHistorique() {
-   
-
-  // --- Séparation stricte : ventes seules vs pertes/retours ---
   const ventesSeules = historique.filter(v => !estSpecial(v));
   const pertesRetours = historique.filter(v => {
     const d=(v.articles||[]).map(a=>a.nom||'').join(' ').toUpperCase();
@@ -987,25 +914,13 @@ function afficherHistorique() {
   const totalCA = ventesSeules.reduce((s,v)=>s+(parseInt(v.total)||0),0);
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
   const totalPertes = pertesRetours.reduce((s,v)=>s+Math.abs(parseInt(v.benef)||0),0);
-
   const statsDiv = document.getElementById('stats-historique');
   if (statsDiv) {
     statsDiv.innerHTML = `
-      <div class="stat-box" style="border-left-color:#1565c0;">
-        <div class="stat-label">Chiffre d'affaires (ventes uniquement)</div>
-        <div class="stat-value vert">${formatPrix(totalCA)}</div>
-      </div>
-      <div class="stat-box" style="border-left-color:#2e7d32;">
-        <div class="stat-label">Bénéfice Net (après pertes/retours)</div>
-        <div class="stat-value ${totalBenef<0?'rouge':'vert'}">${formatPrix(totalBenef)}</div>
-      </div>
-      <div class="stat-box" style="border-left-color:#ef6c00;">
-        <div class="stat-label">Total Pertes & Retours</div>
-        <div class="stat-value orange">${formatPrix(totalPertes)}</div>
-      </div>`;
+      <div class="stat-box" style="border-left-color:#1565c0;"><div class="stat-label">Chiffre d'affaires (ventes uniquement)</div><div class="stat-value vert">${formatPrix(totalCA)}</div></div>
+      <div class="stat-box" style="border-left-color:#2e7d32;"><div class="stat-label">Bénéfice Net (après pertes/retours)</div><div class="stat-value ${totalBenef<0?'rouge':'vert'}">${formatPrix(totalBenef)}</div></div>
+      <div class="stat-box" style="border-left-color:#ef6c00;"><div class="stat-label">Total Pertes & Retours</div><div class="stat-value orange">${formatPrix(totalPertes)}</div></div>`;
   }
-
-  // Filtres
   const fB=(document.getElementById('filtre-histo-boisson')||{value:''}).value.toLowerCase();
   const fD=(document.getElementById('filtre-histo-date')||{value:''}).value.toLowerCase();
   const fT=(document.getElementById('filtre-histo-type')||{value:''}).value.toLowerCase();
@@ -1020,10 +935,8 @@ function afficherHistorique() {
     if(fT==='fournisseur') return d.includes('FOURNISSEUR');
     return true;
   });
-
   const tbody = document.getElementById('historique-ventes-rows'); if (!tbody) return;
-  if (filtre.length===0) { tbody.innerHTML='<tr><td colspan="4" class="vide">Aucune vente enregistrée.</td></tr>'; return; }
-
+  if (filtre.length===0) { tbody.innerHTML='<tr><td colspan="6" class="vide">Aucune vente enregistrée.</td></tr>'; return; }
   tbody.innerHTML = filtre.map((v) => {
     const num = historique.length - historique.indexOf(v);
     let det = v.articles&&v.articles.length>0 ? v.articles.map(a=>`${a.nom||'?'} ×${a.qte}`).join(', ') : '—';
@@ -1032,7 +945,7 @@ function afficherHistorique() {
     if (dU.includes('PAIEMENT FOURNISSEUR')) { badge='💳 ACHAT FOURN.'; coul='background:#fff5f5;'; }
     else if (dU.includes('RETOUR CLIENT')) { badge='🔄 RETOUR'; coul='background:#e1f5fe;'; }
     else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='⚠️ PERTE'; coul='background:#fff3e0;'; }
-   const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
+    const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
     return `<tr style="${coul}border-bottom:1px solid #eee;">
       <td style="padding:10px;font-size:13px;"><div style="font-weight:bold;">#${num} <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">${badge}</span></div><div style="margin-top:3px;color:#777;">⏱️ ${v.date}</div></td>
       <td style="padding:10px;font-size:13px;">${escape(det)}</td>
@@ -1087,23 +1000,26 @@ async function reinitialiserVentes() {
   if (!confirm("⚠️ SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("🔴 DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
-    const { error:e1 }=await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
-    const { error:e2 }=await client.from('ventes').delete().eq('bar_id', barActuel.id);
-    if (e1||e2) throw new Error((e1||e2).message);
+    await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
+    await client.from('ventes').delete().eq('bar_id', barActuel.id);
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function reinitialiserFournisseur() {
-  if (!confirm("⚠️ Vider tout l'historique fournisseur (livraisons + paiements) ?")) return;
+  if (!confirm("⚠️ Vider tout l'historique fournisseur ?")) return;
   try {
-    const { error:e1 }=await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
-    if (e1) throw e1;
+    await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
-// ==================== FOURNISSEUR (livraisons + paiements) ====================
+async function reinitialiserVentesServeuse() {
+  if (!confirm("⚠️ Réinitialiser les ventes de toutes les serveuses ?")) return;
+  toast('Fonctionnalité à configurer selon le besoin.', 'warning');
+}
+
+// ==================== FOURNISSEUR ====================
 async function enregistrerLivraisonFournisseur() {
   const montantStr = document.getElementById('fourn-montant-livraison')?.value;
   const detail = document.getElementById('fourn-detail-livraison')?.value?.trim();
@@ -1111,10 +1027,9 @@ async function enregistrerLivraisonFournisseur() {
   if (!montant||montant<=0) { toast('❌ Montant invalide !','error'); return; }
   if (!detail) { toast('⚠️ Ajoute un détail de livraison !','warning'); return; }
   try {
-    // Livraison + paiement immédiat du même montant
     const { error } = await client.from('fournisseur_historique').insert([
       { bar_id: barActuel.id, type_action: 'LIVRAISON', montant, commentaire: detail },
-{ bar_id: barActuel.id, type_action: 'PAIEMENT',  montant, commentaire: 'Payé à la livraison — '+detail }
+      { bar_id: barActuel.id, type_action: 'PAIEMENT', montant, commentaire: 'Payé à la livraison — '+detail }
     ]);
     if (error) throw error;
     document.getElementById('fourn-montant-livraison').value='';
@@ -1124,22 +1039,13 @@ async function enregistrerLivraisonFournisseur() {
 }
 
 async function chargerEspaceFournisseur() {
-  const { data: hist, error } = await client
-    .from('fournisseur_historique')
-    .select('*')
-    .eq('bar_id', barActuel.id)
-    .order('created_at', { ascending: false });
+  const { data: hist, error } = await client.from('fournisseur_historique').select('*').eq('bar_id', barActuel.id).order('created_at', { ascending: false });
   if (error) { console.error(error); return; }
-
   const livraisons = (hist||[]).filter(h => h.type_action === 'LIVRAISON');
-
   const totalLivre = livraisons.reduce((s,h) => s + h.montant, 0);
-  const totalPaye  = totalLivre; // ← toujours égal au livré
-
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
-  set('fourn-total-livre',      formatPrix(totalLivre));
-  set('fournisseur-bilan-paye', formatPrix(totalPaye));
-
+  set('fourn-total-livre', formatPrix(totalLivre));
+  set('fournisseur-bilan-paye', formatPrix(totalLivre));
   const tbL = document.getElementById('fourn-livraisons-rows');
   if (tbL) {
     if (livraisons.length === 0) {
@@ -1155,124 +1061,70 @@ async function chargerEspaceFournisseur() {
   }
 }
 
-async function ajouterFluxFournisseur(type) {
-  const titre = type==='VERSEMENT'?"Montant VERSÉ au fournisseur (FCFA) :":"Valeur marchandise à crédit (FCFA) :";
-  const ms = prompt(titre); if (!ms) return;
-  const montant = parseInt(ms); if (isNaN(montant)||montant<=0) { alert("❌ Montant invalide !"); return; }
-  const commentaire = prompt("Commentaire (Ex: Facture N°...) :");
-  const { error } = await client.from('fournisseur_historique').insert([{ bar_id: barActuel.id, type_action:type, montant, commentaire:commentaire||'' }]);
-  if (error) { toast('❌ '+error.message,'error'); } else { toast('✅ Enregistré !'); await chargerEspaceFournisseur(); }
-}
-
 async function envoyerTotalVersHistoriqueFournisseur() {
   try {
-    const { data:cfg } = await client.from('config')
-  .select('valeur')
-  .eq('cle','total_fournisseur')
-  .eq('bar_id', barActuel.id)
-  .single();
+    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
     const montant = cfg?parseInt(cfg.valeur)||0:0;
     if (montant<=0) { toast('⚠️ Montant à 0 FCFA, rien à transférer.','warning'); return; }
-
-    // Construire le récap détaillé
-    let recapLignes = '';
-    let recapTexte = '';
+    let recapLignes = '', recapTexte = '';
     if (commandeEnCours.length > 0) {
-      recapLignes = commandeEnCours.map(c =>
-        `<tr><td style="padding:7px 10px;">${c.designation}</td><td style="padding:7px 10px;">${c.type}</td><td style="padding:7px 10px;text-align:right;">${c.qte} btl</td><td style="padding:7px 10px;text-align:right;font-weight:bold;color:#2e7d32;">${formatPrix(c.cout)}</td></tr>`
-      ).join('');
+      recapLignes = commandeEnCours.map(c => `<tr><td style="padding:7px 10px;">${c.designation}</td><td style="padding:7px 10px;">${c.type}</td><td style="padding:7px 10px;text-align:right;">${c.qte} btl</td><td style="padding:7px 10px;text-align:right;font-weight:bold;color:#2e7d32;">${formatPrix(c.cout)}</td></tr>`).join('');
       recapTexte = commandeEnCours.map(c => `${c.designation} (${c.type}, ${c.qte} btl) : ${formatPrix(c.cout)}`).join(' | ');
     } else {
       recapLignes = `<tr><td colspan="4" style="padding:10px;color:#888;font-style:italic;">Commande sans détail enregistré</td></tr>`;
       recapTexte = 'Approvisionnement stock';
     }
-
-    // Afficher la modal de confirmation
     const modal = document.getElementById('modal-confirm-vente');
     const contenu = document.getElementById('modal-recap-contenu');
     const titre = modal?.querySelector('.modal-title');
     const btnConfirmer = modal?.querySelector('.modal-btns .btn:last-child');
-
     if (titre) titre.innerHTML = '📦 Confirmer la livraison fournisseur';
     if (contenu) contenu.innerHTML = `
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">
-        <thead><tr style="background:#e8f5e9;">
-          <th style="padding:7px 10px;text-align:left;">Boisson</th>
-          <th style="padding:7px 10px;text-align:left;">Format</th>
-          <th style="padding:7px 10px;text-align:right;">Qté</th>
-          <th style="padding:7px 10px;text-align:right;">Coût</th>
-        </tr></thead>
+        <thead><tr style="background:#e8f5e9;"><th style="padding:7px 10px;text-align:left;">Boisson</th><th style="padding:7px 10px;text-align:left;">Format</th><th style="padding:7px 10px;text-align:right;">Qté</th><th style="padding:7px 10px;text-align:right;">Coût</th></tr></thead>
         <tbody>${recapLignes}</tbody>
       </table>
-      <div class="modal-recap-ligne" style="margin-top:4px;"><span>TOTAL LIVRAISON</span><span style="color:#2e7d32;">${formatPrix(montant)}</span></div>
-    `;
+      <div class="modal-recap-ligne" style="margin-top:4px;"><span>TOTAL LIVRAISON</span><span style="color:#2e7d32;">${formatPrix(montant)}</span></div>`;
     if (btnConfirmer) {
       btnConfirmer.innerText = '✅ Valider la livraison';
-    btnConfirmer.onclick = async () => {
-  fermerModalVente();
-  // ← Supprimer le prompt(), utiliser recapTexte directement
-  const commentaire = recapTexte || 'Approvisionnement stock';
-  try {
-    const { error:eI } = await client.from('fournisseur_historique').insert([{
-     type_action: 'LIVRAISON',
-      montant,
-      commentaire,
-      bar_id: barActuel.id
-    }]);
-    if (eI) throw eI;
-    await client.from('config')
-      .update({ valeur:'0' })
-      .eq('cle','total_fournisseur')
-      .eq('bar_id', barActuel.id);
-    commandeEnCours = [];
-    toast('✅ Livraison enregistrée !');
-    await initialiserApplication();
-    showSection('historique');
-  } catch(err) {
-    console.error('Erreur:', err);
-    toast('❌ '+err.message,'error');
-  }
-};
+      btnConfirmer.onclick = async () => {
+        fermerModalVente();
+        const commentaire = recapTexte || 'Approvisionnement stock';
+        try {
+          await client.from('fournisseur_historique').insert([{ type_action: 'LIVRAISON', montant, commentaire, bar_id: barActuel.id }]);
+          await client.from('config').update({ valeur:'0' }).eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
+          commandeEnCours = [];
+          toast('✅ Livraison enregistrée !');
+          await initialiserApplication();
+          showSection('historique');
+        } catch(err) { toast('❌ '+err.message,'error'); }
+      };
     }
-    // Rétablir le bouton Annuler
     const btnAnnuler = modal?.querySelector('.modal-btns .btn-danger');
     if (btnAnnuler) btnAnnuler.onclick = () => {
       fermerModalVente();
-      // Rétablir le comportement normal du bouton confirmer pour la caisse
       if (btnConfirmer) { btnConfirmer.innerText = '✅ Encaisser'; btnConfirmer.onclick = confirmerVenteFinale; }
     };
-
     modal?.classList.add('visible');
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function modifierPrixTotalFournisseurStockage() {
   try {
-    const { data:cfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle','total_fournisseur')
-      .eq('bar_id', barActuel.id)
-      .single();
+    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
     const actuel = cfg ? parseInt(cfg.valeur)||0 : 0;
-
-    // Utiliser le modal au lieu de prompt()
     const modal = document.getElementById('modal-confirm-vente');
     const contenu = document.getElementById('modal-recap-contenu');
     const titre = modal?.querySelector('.modal-title');
     const btnConf = modal?.querySelector('.modal-btns .btn:last-child');
     const btnAnn = modal?.querySelector('.modal-btns .btn-danger');
-
     if (titre) titre.innerHTML = '✏️ Modifier le montant fournisseur';
     if (contenu) contenu.innerHTML = `
-      <div style="margin-bottom:12px;font-size:14px;color:#555;">
-        Montant actuel : <strong>${formatPrix(actuel)}</strong>
-      </div>
+      <div style="margin-bottom:12px;font-size:14px;color:#555;">Montant actuel : <strong>${formatPrix(actuel)}</strong></div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <label style="font-size:13px;font-weight:600;">Nouveau montant (FCFA)</label>
-        <input type="number" id="input-nouveau-montant" value="${actuel}" min="0"
-          style="padding:10px;border:2px solid #ddd;border-radius:8px;font-size:16px;width:100%;">
+        <input type="number" id="input-nouveau-montant" value="${actuel}" min="0" style="padding:10px;border:2px solid #ddd;border-radius:8px;font-size:16px;width:100%;">
       </div>`;
-
     if (btnAnn) { btnAnn.style.display=''; btnAnn.innerText='✖ Annuler'; btnAnn.onclick = () => { fermerModalVente(); if(btnConf){btnConf.innerText='✅ Encaisser';btnConf.onclick=confirmerVenteFinale;} }; }
     if (btnConf) {
       btnConf.innerText = '💾 Enregistrer';
@@ -1280,10 +1132,7 @@ async function modifierPrixTotalFournisseurStockage() {
         const nv = parseInt(document.getElementById('input-nouveau-montant').value);
         if (isNaN(nv) || nv < 0) { toast('❌ Montant invalide.','error'); return; }
         fermerModalVente();
-        await client.from('config')
-          .update({ valeur: nv.toString() })
-          .eq('cle','total_fournisseur')
-          .eq('bar_id', barActuel.id);
+        await client.from('config').update({ valeur: nv.toString() }).eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
         const el = document.getElementById('total-fournisseur-stockage');
         if (el) el.innerText = formatPrix(nv);
         toast('✅ Montant mis à jour');
@@ -1291,71 +1140,20 @@ async function modifierPrixTotalFournisseurStockage() {
       };
     }
     modal?.classList.add('visible');
-    // Focus sur l'input
     setTimeout(() => document.getElementById('input-nouveau-montant')?.focus(), 100);
   } catch(err) { toast('❌ '+err.message,'error'); }
-}
-
-async function payerEtReinitialiserFournisseur() {
-  try {
-    const { data:cfg } = await client.from('config')
-      .select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
-    const montant = cfg ? parseInt(cfg.valeur)||0 : 0;
-    if (montant===0) { alert("ℹ️ Montant fournisseur déjà à 0."); return; }
-    if (!confirm(`Confirmer le paiement de ${formatPrix(montant)} ?`)) return;
-    const { data:tr, error:eH } = await client.from('ventes').insert([{
-      bar_id: barActuel.id, total:montant, benefice:-montant, benef:-montant,
-      
-    }]).select().single();
-    if (eH) throw eH;
-    await client.from('vente_articles').insert([{
-      vente_id:tr.id, bar_id: barActuel.id,
-      boisson_designation:"📦 PAIEMENT FOURNISSEUR (Réinitialisation)",
-      quantite:1, prix_unitaire:montant
-    }]);
-    await client.from('config').update({ valeur:"0" })
-      .eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
-    toast(`✅ Paiement ${formatPrix(montant)} enregistré`);
-    await initialiserApplication();
-  } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 // ==================== PDF & WHATSAPP ====================
 function telechargerPDFVentes() {
   const table = document.getElementById('historique-ventes-rows')?.closest('table'); if (!table) return;
-
-  // Calculer les stats
   const ventesSeules = historique.filter(v => !estSpecial(v));
-  const pertesRetours = historique.filter(v => {
-    const d=(v.articles||[]).map(a=>a.nom||'').join(' ').toUpperCase();
-    return d.includes('RETOUR')||d.includes('PERTE')||d.includes('CASSE');
-  });
+  const pertesRetours = historique.filter(v => { const d=(v.articles||[]).map(a=>a.nom||'').join(' ').toUpperCase(); return d.includes('RETOUR')||d.includes('PERTE')||d.includes('CASSE'); });
   const totalCA = ventesSeules.reduce((s,v)=>s+(parseInt(v.total)||0),0);
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
   const totalPertes = pertesRetours.reduce((s,v)=>s+Math.abs(parseInt(v.benef)||0),0);
-
-  const recapHTML = `
-    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:130px;background:#e8f5e9;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #2e7d32;">
-        <div style="font-size:12px;color:#555;text-transform:uppercase;">Chiffre d'Affaires</div>
-        <div style="font-size:20px;font-weight:bold;color:#2e7d32;">${formatPrix(totalCA)}</div>
-      </div>
-      <div style="flex:1;min-width:130px;background:#e3f2fd;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #0288d1;">
-        <div style="font-size:12px;color:#555;text-transform:uppercase;">Bénéfice Net</div>
-        <div style="font-size:20px;font-weight:bold;color:${totalBenef<0?'#c62828':'#0288d1'};">${formatPrix(totalBenef)}</div>
-      </div>
-      <div style="flex:1;min-width:130px;background:#fff3e0;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #ef6c00;">
-        <div style="font-size:12px;color:#555;text-transform:uppercase;">Total Pertes & Retours</div>
-        <div style="font-size:20px;font-weight:bold;color:#ef6c00;">${formatPrix(totalPertes)}</div>
-      </div>
-    </div>`;
-
-  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:9px;border:1px solid #ccc;}th{background:#f0f0f0;}h2{color:#2e7d32;}</style></head><body>
-    <h2>📊 Historique des Ventes — Consensus BarStock</h2>
-    <p style="color:#888;">Généré le : ${new Date().toLocaleString('fr-FR')}</p>
-    ${recapHTML}
-    ${table.outerHTML}
-  </body></html>`;
+  const recapHTML = `<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;"><div style="flex:1;min-width:130px;background:#e8f5e9;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #2e7d32;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Chiffre d'Affaires</div><div style="font-size:20px;font-weight:bold;color:#2e7d32;">${formatPrix(totalCA)}</div></div><div style="flex:1;min-width:130px;background:#e3f2fd;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #0288d1;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Bénéfice Net</div><div style="font-size:20px;font-weight:bold;color:${totalBenef<0?'#c62828':'#0288d1'};">${formatPrix(totalBenef)}</div></div><div style="flex:1;min-width:130px;background:#fff3e0;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #ef6c00;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Total Pertes & Retours</div><div style="font-size:20px;font-weight:bold;color:#ef6c00;">${formatPrix(totalPertes)}</div></div></div>`;
+  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:9px;border:1px solid #ccc;}th{background:#f0f0f0;}h2{color:#2e7d32;}</style></head><body><h2>📊 Historique des Ventes — Consensus BarStock</h2><p style="color:#888;">Généré le : ${new Date().toLocaleString('fr-FR')}</p>${recapHTML}${table.outerHTML}</body></html>`;
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download=`ventes_${new Date().toISOString().slice(0,10)}.html`; a.click();
   toast('⬇️ PDF ventes téléchargé');
@@ -1363,11 +1161,9 @@ function telechargerPDFVentes() {
 
 function telechargerPDFFournisseur() {
   const tL=document.getElementById('fourn-livraisons-rows')?.closest('table');
-  const tP=document.getElementById('fournisseur-historique-rows')?.closest('table');
   const totalL=document.getElementById('fourn-total-livre')?.innerText||'';
   const totalP=document.getElementById('fournisseur-bilan-paye')?.innerText||'';
-
-  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}h3{color:#0288d1}.bilan{display:flex;gap:20px;margin-bottom:20px}.bilan-item{padding:12px 20px;border-radius:8px;text-align:center}.b1{background:#e8f5e9;color:#1b5e20}.b2{background:#e3f2fd;color:#01579b}.b3{background:#fff3e0;color:#bf360c}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><div class="bilan"><div class="bilan-item b1"><div>Total Livré</div><strong>${totalL}</strong></div><div class="bilan-item b2"><div>Total Payé</div><strong>${totalP}</strong></div><div class="bilan-item b3"></div><h3>📦 Livraisons</h3>${tL?tL.outerHTML:''}<h3>💳 Paiements</h3>${tP?tP.outerHTML:''}</body></html>`;
+  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><p>Total Livré : <strong>${totalL}</strong> | Total Payé : <strong>${totalP}</strong></p><h3>📦 Livraisons</h3>${tL?tL.outerHTML:''}</body></html>`;
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download=`fournisseur_${new Date().toISOString().slice(0,10)}.html`; a.click();
   toast('⬇️ PDF fournisseur téléchargé');
@@ -1377,51 +1173,30 @@ function envoyerWhatsAppVentes() {
   const rows=document.querySelectorAll('#historique-ventes-rows tr');
   let lignes='';
   rows.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=3) lignes+=`• ${c[0].innerText.replace(/\n/g,' ')} — ${c[2].innerText}\n`; });
-
-  // Stats calculées directement
   const ventesSeules = historique.filter(v => !estSpecial(v));
-  const pertesRetours = historique.filter(v => {
-    const d=(v.articles||[]).map(a=>a.nom||'').join(' ').toUpperCase();
-    return d.includes('RETOUR')||d.includes('PERTE')||d.includes('CASSE');
-  });
   const totalCA = ventesSeules.reduce((s,v)=>s+(parseInt(v.total)||0),0);
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
-  const totalPertes = pertesRetours.reduce((s,v)=>s+Math.abs(parseInt(v.benef)||0),0);
-
-  const stats = `\n💰 CA Ventes : ${formatPrix(totalCA)}\n📈 Bénéfice Net : ${formatPrix(totalBenef)}\n⚠️ Pertes & Retours : ${formatPrix(totalPertes)}`;
+  const stats = `\n💰 CA Ventes : ${formatPrix(totalCA)}\n📈 Bénéfice Net : ${formatPrix(totalBenef)}`;
   window.open(`https://wa.me/?text=${encodeURIComponent('*RÉCAPITULATIF VENTES CAISSE*\n\n'+lignes+stats+'\n\nDate : '+new Date().toLocaleDateString('fr-FR'))}`, '_blank');
 }
 
 function envoyerWhatsAppFournisseur() {
   const tL=document.getElementById('fourn-total-livre')?.innerText||'';
   const tP=document.getElementById('fournisseur-bilan-paye')?.innerText||'';
-  const rD=document.getElementById('fourn-reste-du')?.innerText||'';
   const rowsL=document.querySelectorAll('#fourn-livraisons-rows tr');
-  const rowsP=document.querySelectorAll('#fournisseur-historique-rows tr');
-  let livs='', paies='';
+  let livs='';
   rowsL.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=2) livs+=`• ${c[0].innerText} — ${c[2].innerText}\n`; });
-  rowsP.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=2) paies+=`• ${c[0].innerText} — ${c[1].innerText}\n`; });
-  const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n💳 Paiements :\n${paies}\n\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
+  const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 }
-// ── COMMANDES ──────────────────────────────────────────────────
 
+// ==================== COMMANDES ====================
 async function ouvrirNouvelleCommande() {
   const table = document.getElementById('cmd-table')?.value.trim();
   const clientNom = document.getElementById('cmd-client')?.value.trim();
   if (!table) { toast('⚠️ Indique un numéro de table', 'warning'); return; }
-
-  const { data, error } = await client.from('commandes').insert([{
-    bar_id: barActuel.id,
-    table_num: table,
-    client_nom: clientNom || null,
-    statut: 'ouverte',
-    articles: [],
-    total: 0
-  }]).select().single();
-
+  const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0 }]).select().single();
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-
   document.getElementById('cmd-table').value = '';
   document.getElementById('cmd-client').value = '';
   toast('✅ Commande ouverte — ' + table);
@@ -1430,40 +1205,23 @@ async function ouvrirNouvelleCommande() {
 }
 
 async function chargerCommandes() {
-  const { data, error } = await client.from('commandes')
-    .select('*')
-    .eq('bar_id', barActuel.id)
-    .eq('statut', 'ouverte')
-    .order('created_at', { ascending: true });
-
+  const { data, error } = await client.from('commandes').select('*').eq('bar_id', barActuel.id).eq('statut', 'ouverte').order('created_at', { ascending: true });
   if (error) { console.error(error); return; }
   commandesOuvertes = data || [];
   afficherCommandes();
 }
 
 function afficherCommandes() {
-  const div = document.getElementById('commandes-liste');
-  if (!div) return;
-
-  if (commandesOuvertes.length === 0) {
-    div.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune commande ouverte</div>';
-    return;
-  }
-
+  const div = document.getElementById('commandes-liste'); if (!div) return;
+  if (commandesOuvertes.length === 0) { div.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune commande ouverte</div>'; return; }
   div.innerHTML = commandesOuvertes.map(cmd => {
     const articles = cmd.articles || [];
     const duree = dureeDepuis(cmd.created_at);
-    const detail = articles.length > 0
-      ? articles.map(a => `${a.designation} x${a.qte}`).join(', ')
-      : 'Aucun article';
+    const detail = articles.length > 0 ? articles.map(a => `${a.designation} x${a.qte}`).join(', ') : 'Aucun article';
     const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
-
     return `<div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div>
-          <span style="font-weight:700;font-size:15px;">${label}</span>
-          <span style="margin-left:10px;font-size:12px;color:#888;">⏱️ ${duree}</span>
-        </div>
+        <div><span style="font-weight:700;font-size:15px;">${label}</span><span style="margin-left:10px;font-size:12px;color:#888;">⏱️ ${duree}</span></div>
         <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
       </div>
       <div style="font-size:13px;color:#555;margin-bottom:10px;">${detail}</div>
@@ -1495,68 +1253,32 @@ function ouvrirModalCommande(cmd) {
   document.getElementById('modal-commande').classList.add('visible');
 }
 
-function fermerModalCommande() {
-  document.getElementById('modal-commande').classList.remove('visible');
-  commandeActive = null;
-}
+function fermerModalCommande() { document.getElementById('modal-commande').classList.remove('visible'); commandeActive = null; }
 
 function afficherArticlesCommande() {
-  const div = document.getElementById('modal-cmd-articles');
-  if (!div || !commandeActive) return;
+  const div = document.getElementById('modal-cmd-articles'); if (!div || !commandeActive) return;
   const articles = commandeActive.articles || [];
-  if (articles.length === 0) {
-    div.innerHTML = '<div style="color:#aaa;font-size:13px;margin-bottom:8px;">Aucun article ajouté</div>';
-    return;
-  }
+  if (articles.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;margin-bottom:8px;">Aucun article ajouté</div>'; return; }
   const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-  div.innerHTML = `
-    <div style="background:#f9f9f9;border-radius:6px;padding:10px;margin-bottom:10px;">
-      ${articles.map((a, i) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-          <span style="font-size:13px;">${a.designation} × ${a.qte}</span>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span>
-            <button onclick="retirerArticleCommande(${i})"
-              style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button>
-          </div>
-        </div>`).join('')}
-      <div style="border-top:1px solid #ddd;margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;">
-        <span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span>
-      </div>
-    </div>`;
+  div.innerHTML = `<div style="background:#f9f9f9;border-radius:6px;padding:10px;margin-bottom:10px;">${articles.map((a, i) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:13px;">${a.designation} × ${a.qte}</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span><button onclick="retirerArticleCommande(${i})" style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button></div></div>`).join('')}<div style="border-top:1px solid #ddd;margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;"><span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span></div></div>`;
 }
 
-function filtrerBoissonsCommande() {
-  const q = document.getElementById('modal-cmd-search')?.value || '';
-  afficherBoissonsCommande(q);
-}
+function filtrerBoissonsCommande() { const q = document.getElementById('modal-cmd-search')?.value || ''; afficherBoissonsCommande(q); }
 
 function afficherBoissonsCommande(recherche) {
-  const div = document.getElementById('modal-cmd-boissons');
-  if (!div) return;
+  const div = document.getElementById('modal-cmd-boissons'); if (!div) return;
   const terme = recherche.toLowerCase();
   const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme));
   if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
-  div.innerHTML = fil.map(b => `
-    <button onclick="ajouterArticleCommande(${b.id})"
-      style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:6px;padding:8px;text-align:left;cursor:pointer;font-size:12px;">
-      <div style="font-weight:600;">${b.designation}</div>
-      <div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div>
-      <div style="color:#888;">Stock: ${b.stock}</div>
-    </button>`).join('');
+  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:6px;padding:8px;text-align:left;cursor:pointer;font-size:12px;"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
 function ajouterArticleCommande(id) {
   if (!commandeActive) return;
-  const b = boissons.find(i => i.id === id);
-  if (!b) return;
+  const b = boissons.find(i => i.id === id); if (!b) return;
   const articles = commandeActive.articles || [];
   const existe = articles.find(a => a.id === id);
-  if (existe) {
-    existe.qte += 1;
-  } else {
-    articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 });
-  }
+  if (existe) { existe.qte += 1; } else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
   commandeActive.articles = articles;
   commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
   afficherArticlesCommande();
@@ -1565,11 +1287,7 @@ function ajouterArticleCommande(id) {
 function retirerArticleCommande(index) {
   if (!commandeActive) return;
   const articles = commandeActive.articles || [];
-  if (articles[index].qte > 1) {
-    articles[index].qte -= 1;
-  } else {
-    articles.splice(index, 1);
-  }
+  if (articles[index].qte > 1) { articles[index].qte -= 1; } else { articles.splice(index, 1); }
   commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
   afficherArticlesCommande();
 }
@@ -1577,187 +1295,114 @@ function retirerArticleCommande(index) {
 async function sauvegarderCommande() {
   if (!commandeActive) return;
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
-  const { error } = await client.from('commandes').update({
-    articles: commandeActive.articles,
-    total: commandeActive.total,
-    note
-  }).eq('id', commandeActive.id);
+  const { error } = await client.from('commandes').update({ articles: commandeActive.articles, total: commandeActive.total, note }).eq('id', commandeActive.id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   toast('💾 Commande sauvegardée !');
   await chargerCommandes();
 }
 
-async function encaisserCommandeId(id) {
-  const cmd = commandesOuvertes.find(c => c.id === id);
-  if (cmd) { commandeActive = cmd; await encaisserCommande(); }
-}
+async function encaisserCommandeId(id) { const cmd = commandesOuvertes.find(c => c.id === id); if (cmd) { commandeActive = cmd; await encaisserCommande(); } }
 
 async function encaisserCommande() {
   if (!commandeActive) return;
   await sauvegarderCommande();
   const cmd = commandeActive;
-  if (!cmd.articles || cmd.articles.length === 0) {
-    toast('⚠️ Aucun article dans la commande', 'warning'); return;
-  }
-
-   // Vérification stock frais
+  if (!cmd.articles || cmd.articles.length === 0) { toast('⚠️ Aucun article dans la commande', 'warning'); return; }
   const ids = cmd.articles.map(a => a.id);
-  const { data: stockFrais } = await client.from('boissons')
-    .select('id, stock, designation')
-    .in('id', ids)
-    .eq('bar_id', barActuel.id);
-
+  const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
   for (const a of cmd.articles) {
     const bFrais = stockFrais?.find(b => b.id === a.id);
-    if (bFrais && a.qte > bFrais.stock) {
-      toast(`❌ Stock insuffisant pour ${bFrais.designation} (reste ${bFrais.stock})`, 'error');
-      await initialiserApplication();
-      return;
-    }
+    if (bFrais && a.qte > bFrais.stock) { toast(`❌ Stock insuffisant pour ${bFrais.designation} (reste ${bFrais.stock})`, 'error'); await initialiserApplication(); return; }
   }
-  // Calcul bénéfice
   let total = 0, benef = 0;
   for (const a of cmd.articles) {
-    const b = boissons.find(i => i.id === a.id);
-    if (!b) continue;
+    const b = boissons.find(i => i.id === a.id); if (!b) continue;
     const qpc = b.quantite_par_cassier || (b.type_bouteille === 'petit bouteille' ? 24 : 12);
     const achat = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
-    total += a.prix * a.qte;
-    benef += (a.prix - achat) * a.qte;
+    total += a.prix * a.qte; benef += (a.prix - achat) * a.qte;
   }
-
   const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
   const note = (document.getElementById('modal-cmd-note')?.value.trim()) || label;
-
   try {
-    // Insérer dans ventes
-    const { data: vente, error: eV } = await client.from('ventes').insert([{
-  bar_id: barActuel.id, total, benefice: benef, benef, note,
-  serveuse: utilisateurActuel?.nom || null
-}]).select().single();
+    const { data: vente, error: eV } = await client.from('ventes').insert([{ bar_id: barActuel.id, total, benefice: benef, benef, note, serveuse: utilisateurActuel?.nom || null }]).select().single();
     if (eV) throw eV;
-
-    // Insérer les articles + décrémenter stock
     for (const a of cmd.articles) {
-      await client.from('vente_articles').insert([{
-        vente_id: vente.id, bar_id: barActuel.id,
-        boisson_designation: a.designation,
-        quantite: a.qte, prix_unitaire: a.prix
-      }]);
+      await client.from('vente_articles').insert([{ vente_id: vente.id, bar_id: barActuel.id, boisson_designation: a.designation, quantite: a.qte, prix_unitaire: a.prix }]);
       const b = boissons.find(i => i.id === a.id);
-      if (b) await client.from('boissons')
-        .update({ stock: b.stock - a.qte })
-        .eq('id', a.id).eq('bar_id', barActuel.id);
+      if (b) await client.from('boissons').update({ stock: b.stock - a.qte }).eq('id', a.id).eq('bar_id', barActuel.id);
     }
-
-    // Fermer la commande
     await client.from('commandes').update({ statut: 'payee' }).eq('id', cmd.id);
-
     fermerModalCommande();
     toast('✅ Commande encaissée — ' + formatPrix(total));
-    await initialiserApplication();
-    await chargerCommandes();
+    await initialiserApplication(); await chargerCommandes();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function annulerCommande(id) {
   if (!confirm('Annuler cette commande ?')) return;
-  const { error } = await client.from('commandes')
-    .update({ statut: 'annulee' }).eq('id', id);
+  const { error } = await client.from('commandes').update({ statut: 'annulee' }).eq('id', id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   toast('🗑️ Commande annulée');
   await chargerCommandes();
 }
 
 function mettreAJourBadgeCommandes() {
-  const badge = document.getElementById('badge-commandes');
-  if (!badge) return;
+  const badge = document.getElementById('badge-commandes'); if (!badge) return;
   const nb = commandesOuvertes.length;
-  if (nb === 0) {
-    badge.style.display = 'none';
-  } else {
-    badge.style.display = 'inline';
-    badge.textContent = nb;
-  }
+  badge.style.display = nb === 0 ? 'none' : 'inline';
+  if (nb > 0) badge.textContent = nb;
 }
+
 function ouvrirModalEnvoyerTable() {
   if (Object.keys(panier).length === 0) { toast('⚠️ Panier vide !', 'warning'); return; }
   if (commandesOuvertes.length === 0) { toast('⚠️ Aucune table ouverte', 'warning'); return; }
-
   const div = document.getElementById('modal-tables-liste');
   if (div) {
     div.innerHTML = commandesOuvertes.map(cmd => {
       const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
       const nb = (cmd.articles || []).reduce((s, a) => s + a.qte, 0);
-      return `<button onclick="envoyerPanierVersTable(${cmd.id})"
-        style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:14px;">
-        <strong>${label}</strong>
-        <span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span>
-      </button>`;
+      return `<button onclick="envoyerPanierVersTable(${cmd.id})" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:14px;"><strong>${label}</strong><span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span></button>`;
     }).join('');
   }
   document.getElementById('modal-choisir-table').classList.add('visible');
 }
 
-function fermerModalTable() {
-  document.getElementById('modal-choisir-table').classList.remove('visible');
-}
+function fermerModalTable() { document.getElementById('modal-choisir-table').classList.remove('visible'); }
 
 async function envoyerPanierVersTable(cmdId) {
-  const cmd = commandesOuvertes.find(c => c.id === cmdId);
-  if (!cmd) return;
-
+  const cmd = commandesOuvertes.find(c => c.id === cmdId); if (!cmd) return;
   const articles = [...(cmd.articles || [])];
-
   for (const id in panier) {
-    const b = boissons.find(i => i.id == id);
-    if (!b) continue;
+    const b = boissons.find(i => i.id == id); if (!b) continue;
     const existe = articles.find(a => a.id == id);
-    if (existe) {
-      existe.qte += panier[id];
-    } else {
-      articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: panier[id] });
-    }
+    if (existe) { existe.qte += panier[id]; } else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: panier[id] }); }
   }
-
   const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-
   const { error } = await client.from('commandes').update({ articles, total }).eq('id', cmdId);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-
-  fermerModalTable();
-  panier = {};
-  mettreAJourTicket();
+  fermerModalTable(); panier = {}; mettreAJourTicket();
   toast('✅ Articles ajoutés à la table !');
   await chargerCommandes();
 }
+
 // ==================== DÉMARRAGE ====================
 document.addEventListener("DOMContentLoaded", () => {
   appliquerDarkMode();
   gererConnexion();
   const sCat=document.getElementById('search-catalogue'); if(sCat)sCat.addEventListener('input',afficherCatalogue);
   const sVen=document.getElementById('search-ventes'); if(sVen)sVen.addEventListener('input',afficherVentes);
-    const connEmail = document.getElementById('conn-email');
+  const connEmail = document.getElementById('conn-email');
   const connPassword = document.getElementById('conn-password');
-  const insConfirm = document.getElementById('ins-password-confirm');
-  [connEmail, connPassword].forEach(el => {
-    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); });
-  });
-  if (insConfirm) insConfirm.addEventListener('keydown', e => { if (e.key === 'Enter') inscrireBar(); });
-  setInterval(() => {
-  if (document.getElementById('commandes')?.classList.contains('active')) {
-    afficherCommandes();
-  }
-}, 30000); // rafraichit toutes les 30 secondes
+  [connEmail, connPassword].forEach(el => { if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); }); });
+  setInterval(() => { if (document.getElementById('commandes')?.classList.contains('active')) afficherCommandes(); }, 30000);
   restaurerSession();
 });
 
-
-// ── RÔLES & SERVEUSES ─────────────────────────────────────────
-
+// ==================== RÔLES & SERVEUSES ====================
 function afficherEcranRole() {
   document.getElementById('ecran-auth').style.display = 'none';
   document.getElementById('app-principale').style.display = 'none';
+  document.getElementById('ecran-admin').style.display = 'none';
   document.getElementById('ecran-role').style.display = 'flex';
   const el = document.getElementById('role-bar-nom');
   if (el) el.textContent = barActuel.nom;
@@ -1772,24 +1417,16 @@ function connexionGerant() {
 async function validerPinGerant() {
   const pin = document.getElementById('input-pin-gerant')?.value;
   const errEl = document.getElementById('erreur-pin-gerant');
-
-  // Lire le PIN gérant depuis config
-  const { data } = await client.from('config')
-    .select('valeur').eq('cle', 'pin_gerant').eq('bar_id', barActuel.id).single();
-
+  const { data } = await client.from('config').select('valeur').eq('cle', 'pin_gerant').eq('bar_id', barActuel.id).single();
   const pinStocke = data?.valeur;
-
   if (!pinStocke) {
-    // Pas encore de PIN — première fois, on le définit
     if (!pin || pin.length < 4) { if(errEl){errEl.textContent='PIN trop court (4 min)';errEl.style.display='block';} return; }
     await client.from('config').insert([{ bar_id: barActuel.id, cle: 'pin_gerant', valeur: pin }]);
     toast('✅ PIN gérant défini !');
   } else if (pin !== pinStocke) {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
-    document.getElementById('input-pin-gerant').value = '';
-    return;
+    document.getElementById('input-pin-gerant').value = ''; return;
   }
-
   utilisateurActuel = { nom: 'Gérant', role: 'gerant' };
   document.getElementById('input-pin-gerant').value = '';
   if (errEl) errEl.style.display = 'none';
@@ -1800,22 +1437,13 @@ async function afficherChoixServeuse() {
   document.getElementById('panel-serveuse').style.display = 'block';
   document.getElementById('panel-gerant').style.display = 'none';
   document.getElementById('panel-pin-serveuse').style.display = 'none';
-
-  const { data: serveuses } = await client.from('serveuses')
-    .select('id, nom').eq('bar_id', barActuel.id).order('nom');
-
-  const div = document.getElementById('liste-serveuses');
-  if (!div) return;
+  const { data: serveuses } = await client.from('serveuses').select('id, nom').eq('bar_id', barActuel.id).order('nom');
+  const div = document.getElementById('liste-serveuses'); if (!div) return;
   if (!serveuses || serveuses.length === 0) {
     div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
     return;
   }
-  div.innerHTML = serveuses.map(s => `
-    <button onclick="selectionnerServeuse(${s.id}, '${s.nom}')"
-      style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;
-             text-align:left;cursor:pointer;font-size:15px;font-weight:600;">
-      👤 ${s.nom}
-    </button>`).join('');
+  div.innerHTML = serveuses.map(s => `<button onclick="selectionnerServeuse(${s.id}, '${s.nom}')" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:15px;font-weight:600;">👤 ${s.nom}</button>`).join('');
 }
 
 let serveuseSelectionnee = null;
@@ -1829,16 +1457,11 @@ async function validerPinServeuse() {
   if (!serveuseSelectionnee) return;
   const pin = document.getElementById('input-pin-serveuse')?.value;
   const errEl = document.getElementById('erreur-pin-serveuse');
-
-  const { data } = await client.from('serveuses')
-    .select('code_pin').eq('id', serveuseSelectionnee.id).single();
-
+  const { data } = await client.from('serveuses').select('code_pin').eq('id', serveuseSelectionnee.id).single();
   if (!data || pin !== data.code_pin) {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
-    document.getElementById('input-pin-serveuse').value = '';
-    return;
+    document.getElementById('input-pin-serveuse').value = ''; return;
   }
-
   utilisateurActuel = { nom: serveuseSelectionnee.nom, role: 'serveuse' };
   document.getElementById('input-pin-serveuse').value = '';
   serveuseSelectionnee = null;
@@ -1854,48 +1477,27 @@ function lancerApplicationAvecRole() {
   appliquerRestrictions();
   activerRealtime();
   initialiserApplication().then(() => {
-    // Après chargement des données, afficher la bonne section
     const estGerant = utilisateurActuel?.role === 'gerant';
-    if (estGerant) {
-      showSection('catalogue');
-    } else {
-      showSection('ventes');
-    }
+    if (estGerant) { showSection('catalogue'); } else { showSection('ventes'); }
   });
 }
+
 function appliquerRestrictions() {
   const estGerant = utilisateurActuel?.role === 'gerant';
-
-  // Sections cachées pour les serveuses
-  const sectionsGerant = ['etat-stock', 'stockage-recup', 'historique', 'corbeille', 'rapport-serveuses'];
-  sectionsGerant.forEach(id => {
-    const btn = document.querySelector(`[data-section="${id}"]`);
-    if (btn) btn.style.display = estGerant ? '' : 'none';
-  });
-
-  // Éléments .gerant-only
-  document.querySelectorAll('.gerant-only').forEach(el => {
-    el.style.display = estGerant ? '' : 'none';
-  });
-
-  // Si serveuse → forcer caisse
-  if (!estGerant) {
-    setTimeout(() => showSection('ventes'), 300);
-  }
+  const sectionsGerant = ['etat-stock', 'stockage-recup', 'historique', 'corbeille', 'rapport-serveuses', 'profil'];
+  sectionsGerant.forEach(id => { const btn = document.querySelector(`[data-section="${id}"]`); if (btn) btn.style.display = estGerant ? '' : 'none'; });
+  document.querySelectorAll('.gerant-only').forEach(el => { el.style.display = estGerant ? '' : 'none'; });
+  if (!estGerant) { setTimeout(() => showSection('ventes'), 300); }
 }
 
-// ── GESTION SERVEUSES (interface gérant) ──────────────────────
-
+// ── GESTION SERVEUSES (gérant) ──
 async function ajouterServeuse() {
   const nom = document.getElementById('srv-nom')?.value.trim();
   const pin = document.getElementById('srv-pin')?.value.trim();
   if (!nom) { toast('⚠️ Nom obligatoire', 'warning'); return; }
   if (!pin || pin.length < 4) { toast('⚠️ PIN trop court (4 min)', 'warning'); return; }
-
-  const { error } = await client.from('serveuses')
-    .insert([{ bar_id: barActuel.id, nom, code_pin: pin }]);
+  const { error } = await client.from('serveuses').insert([{ bar_id: barActuel.id, nom, code_pin: pin }]);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-
   document.getElementById('srv-nom').value = '';
   document.getElementById('srv-pin').value = '';
   toast('✅ Serveuse ajoutée !');
@@ -1903,47 +1505,23 @@ async function ajouterServeuse() {
 }
 
 async function chargerListeServeuses() {
-  const { data } = await client.from('serveuses')
-    .select('*').eq('bar_id', barActuel.id).order('nom');
-  const div = document.getElementById('liste-serveuses-gestion');
-  if (!div) return;
-  if (!data || data.length === 0) {
-    div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>';
-    return;
-  }
-  div.innerHTML = data.map(s => `
-    <div style="display:flex;justify-content:space-between;align-items:center;
-                padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;">
-      <span style="font-weight:600;">👤 ${escape(s.nom)}</span>
-      <button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button>
-    </div>`).join('');
+  const { data } = await client.from('serveuses').select('*').eq('bar_id', barActuel.id).order('nom');
+  const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
+  if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
+  div.innerHTML = data.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
 }
+
 async function chargerRapportServeuses() {
   const periode = document.getElementById('rapport-periode')?.value || 'today';
-
-  // Calcul de la date de début selon la période
   const maintenant = new Date();
   let dateDebut = null;
-  if (periode === 'today') {
-    dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
-  } else if (periode === 'week') {
-    dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  } else if (periode === 'month') {
-    dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
-  }
-
-  // Charger les ventes
-  let query = client.from('ventes')
-    .select('id, total, benef, serveuse, created_at, vente_articles(boisson_designation, quantite)')
-    .eq('bar_id', barActuel.id)
-    .order('created_at', { ascending: false });
-
+  if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
+  else if (periode === 'week') dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
+  let query = client.from('ventes').select('id, total, benef, serveuse, created_at, vente_articles(boisson_designation, quantite)').eq('bar_id', barActuel.id).order('created_at', { ascending: false });
   if (dateDebut) query = query.gte('created_at', dateDebut);
-
   const { data: ventes, error } = await query;
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-
-  // Grouper par serveuse
   const groupes = {};
   for (const v of ventes || []) {
     const nom = v.serveuse || 'Inconnu';
@@ -1952,72 +1530,35 @@ async function chargerRapportServeuses() {
     groupes[nom].total += parseInt(v.total) || 0;
     groupes[nom].benef += parseInt(v.benef) || 0;
   }
-
   const liste = Object.values(groupes).sort((a, b) => b.total - a.total);
   const totalGlobal = liste.reduce((s, g) => s + g.total, 0);
   const benefGlobal = liste.reduce((s, g) => s + g.benef, 0);
-
-  // Stats globales
   const statsDiv = document.getElementById('rapport-stats-globales');
   if (statsDiv) {
     statsDiv.innerHTML = `
-      <div class="stat-box" style="border-left-color:#1a6b3a;">
-        <div class="stat-label">Total CA période</div>
-        <div class="stat-value vert">${formatPrix(totalGlobal)}</div>
-      </div>
-      <div class="stat-box" style="border-left-color:#d4a017;">
-        <div class="stat-label">Bénéfice période</div>
-        <div class="stat-value" style="color:#d4a017;">${formatPrix(benefGlobal)}</div>
-      </div>
-      <div class="stat-box" style="border-left-color:#0288d1;">
-        <div class="stat-label">Serveuses actives</div>
-        <div class="stat-value" style="color:#0288d1;">${liste.length}</div>
-      </div>`;
+      <div class="stat-box" style="border-left-color:#1a6b3a;"><div class="stat-label">Total CA période</div><div class="stat-value vert">${formatPrix(totalGlobal)}</div></div>
+      <div class="stat-box" style="border-left-color:#d4a017;"><div class="stat-label">Bénéfice période</div><div class="stat-value" style="color:#d4a017;">${formatPrix(benefGlobal)}</div></div>
+      <div class="stat-box" style="border-left-color:#0288d1;"><div class="stat-label">Serveuses actives</div><div class="stat-value" style="color:#0288d1;">${liste.length}</div></div>`;
   }
-
-  // Tableau par serveuse
-  const contenu = document.getElementById('rapport-serveuses-contenu');
-  if (!contenu) return;
-
-  if (liste.length === 0) {
-    contenu.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune vente sur cette période.</div>';
-    return;
-  }
-
+  const contenu = document.getElementById('rapport-serveuses-contenu'); if (!contenu) return;
+  if (liste.length === 0) { contenu.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune vente sur cette période.</div>'; return; }
   contenu.innerHTML = liste.map(g => {
-    const nbVentes = g.ventes.filter(v => {
-      const d = (v.vente_articles||[]).map(a=>a.boisson_designation||'').join(' ').toUpperCase();
-      return !d.includes('RETOUR') && !d.includes('PERTE') && !d.includes('FOURNISSEUR');
-    }).length;
-
-    return `
-    <div style="border:1px solid #ddd;border-radius:10px;margin-bottom:16px;overflow:hidden;">
-      <!-- En-tête serveuse -->
+    const nbVentes = g.ventes.filter(v => { const d=(v.vente_articles||[]).map(a=>a.boisson_designation||'').join(' ').toUpperCase(); return !d.includes('RETOUR')&&!d.includes('PERTE')&&!d.includes('FOURNISSEUR'); }).length;
+    return `<div style="border:1px solid #ddd;border-radius:10px;margin-bottom:16px;overflow:hidden;">
       <div style="background:#0f3d22;color:white;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
         <span style="font-weight:700;font-size:15px;">👤 ${escape(g.nom)}</span>
         <span style="font-size:13px;opacity:0.8;">${nbVentes} vente(s)</span>
       </div>
-      <!-- Stats serveuse -->
       <div style="display:flex;gap:0;border-bottom:1px solid #eee;">
-        <div style="flex:1;padding:12px;text-align:center;border-right:1px solid #eee;">
-          <div style="font-size:11px;color:#888;text-transform:uppercase;">CA</div>
-          <div style="font-weight:700;color:#1a6b3a;">${formatPrix(g.total)}</div>
-        </div>
-        <div style="flex:1;padding:12px;text-align:center;">
-          <div style="font-size:11px;color:#888;text-transform:uppercase;">Bénéfice</div>
-          <div style="font-weight:700;color:#d4a017;">${formatPrix(g.benef)}</div>
-        </div>
+        <div style="flex:1;padding:12px;text-align:center;border-right:1px solid #eee;"><div style="font-size:11px;color:#888;text-transform:uppercase;">CA</div><div style="font-weight:700;color:#1a6b3a;">${formatPrix(g.total)}</div></div>
+        <div style="flex:1;padding:12px;text-align:center;"><div style="font-size:11px;color:#888;text-transform:uppercase;">Bénéfice</div><div style="font-weight:700;color:#d4a017;">${formatPrix(g.benef)}</div></div>
       </div>
-      <!-- Dernières ventes -->
       <div style="padding:12px;">
         <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">DERNIÈRES VENTES</div>
         ${g.ventes.slice(0, 5).map(v => {
           const articles = (v.vente_articles||[]).map(a => `${a.boisson_designation} ×${a.quantite}`).join(', ');
           const date = new Date(v.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:13px;">
-            <span style="color:#555;">${date} — ${articles || '—'}</span>
-            <span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span>
-          </div>`;
+          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:13px;"><span style="color:#555;">${date} — ${articles || '—'}</span><span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span></div>`;
         }).join('')}
         ${g.ventes.length > 5 ? `<div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">+ ${g.ventes.length - 5} autre(s)</div>` : ''}
       </div>
@@ -2032,11 +1573,129 @@ async function supprimerServeuse(id) {
   chargerListeServeuses();
 }
 
-
-// Bouton changer d'utilisateur
 function changerUtilisateur() {
-  utilisateurActuel = null;
-  realtimeActif = false;
+  utilisateurActuel = null; realtimeActif = false;
   client.removeAllChannels();
   afficherEcranRole();
+}
+
+// ==================== PROFIL BAR ====================
+
+async function chargerProfilBar() {
+  // Pré-remplir le nom actuel
+  const nomInput = document.getElementById('profil-nom');
+  if (nomInput) nomInput.placeholder = barActuel.nom;
+
+  // Pré-remplir email actuel
+  const { data: userData } = await client.auth.getUser();
+  const emailInput = document.getElementById('profil-email');
+  if (emailInput && userData?.user?.email) {
+    emailInput.placeholder = userData.user.email;
+  }
+
+  // Masquer le message
+  const msg = document.getElementById('profil-message');
+  if (msg) msg.style.display = 'none';
+}
+
+function afficherMessageProfil(texte, succes = true) {
+  const msg = document.getElementById('profil-message');
+  if (!msg) return;
+  msg.innerText = texte;
+  msg.style.display = 'block';
+  msg.style.background = succes ? '#e8f5e9' : '#fff5f5';
+  msg.style.color = succes ? '#1a6b3a' : '#c62828';
+  msg.style.border = succes ? '1px solid #a5d6a7' : '1px solid #ffcdd2';
+  setTimeout(() => { msg.style.display = 'none'; }, 4000);
+}
+
+async function changerNomBar() {
+  const nom = (document.getElementById('profil-nom')?.value || '').trim();
+  if (!nom) { afficherMessageProfil('Entrez un nouveau nom.', false); return; }
+  if (nom === barActuel.nom) { afficherMessageProfil('Ce nom est déjà le vôtre.', false); return; }
+
+  try {
+    const { error } = await client.from('bars').update({ nom }).eq('id', barActuel.id);
+    if (error) throw error;
+    barActuel.nom = nom;
+    localStorage.setItem('barstock_bar_nom', nom);
+    // Mettre à jour l'en-tête
+    const nomEl = document.getElementById('nom-bar-actuel');
+    if (nomEl) nomEl.innerText = `Consensus BarStock - ${nom} (${utilisateurActuel.nom})`;
+    document.getElementById('profil-nom').value = '';
+    document.getElementById('profil-nom').placeholder = nom;
+    afficherMessageProfil('✅ Nom du bar mis à jour !');
+  } catch (err) {
+    afficherMessageProfil('❌ Erreur : ' + err.message, false);
+  }
+}
+
+async function changerEmail() {
+  const email = (document.getElementById('profil-email')?.value || '').trim();
+  if (!email) { afficherMessageProfil('Entrez un nouvel email.', false); return; }
+
+  try {
+    const { error } = await client.auth.updateUser({ email });
+    if (error) throw error;
+
+    // Mettre à jour aussi dans la table bars
+    await client.from('bars').update({ email }).eq('id', barActuel.id);
+
+    afficherMessageProfil('✅ Email mis à jour ! Reconnexion dans 3 secondes...');
+    setTimeout(async () => {
+      await client.auth.signOut();
+      barActuel = null; utilisateurActuel = null;
+      localStorage.removeItem('barstock_bar_id');
+      localStorage.removeItem('barstock_bar_nom');
+      localStorage.removeItem('barstock_expiration');
+      // Pré-remplir le nouvel email dans l'écran de connexion
+      const connEmail = document.getElementById('conn-email');
+      if (connEmail) connEmail.value = email;
+      afficherEcranAuth();
+    }, 3000);
+  } catch (err) {
+    afficherMessageProfil('❌ Erreur : ' + err.message, false);
+  }
+}
+
+async function changerMotDePasse() {
+  const password = (document.getElementById('profil-password')?.value || '').trim();
+  const confirm = (document.getElementById('profil-password-confirm')?.value || '').trim();
+
+  if (!password || password.length < 6) { afficherMessageProfil('Le mot de passe doit avoir au moins 6 caractères.', false); return; }
+  if (password !== confirm) { afficherMessageProfil('Les mots de passe ne correspondent pas.', false); return; }
+
+  if (!confirm(`Changer le mot de passe ? Vous serez déconnecté et devrez vous reconnecter avec le nouveau mot de passe.`)) return;
+
+  try {
+    const { error } = await client.auth.updateUser({ password });
+    if (error) throw error;
+
+    afficherMessageProfil('✅ Mot de passe modifié ! Reconnexion dans 3 secondes...');
+    setTimeout(async () => {
+      await client.auth.signOut();
+      barActuel = null; utilisateurActuel = null;
+      localStorage.removeItem('barstock_bar_id');
+      localStorage.removeItem('barstock_bar_nom');
+      localStorage.removeItem('barstock_expiration');
+      afficherEcranAuth();
+    }, 3000);
+  } catch (err) {
+    afficherMessageProfil('❌ Erreur : ' + err.message, false);
+  }
+}
+
+async function changerPinGerant() {
+  const pin = (document.getElementById('profil-pin')?.value || '').trim();
+  if (!pin || pin.length < 4) { afficherMessageProfil('PIN trop court (minimum 4 chiffres).', false); return; }
+
+  try {
+    const { error } = await client.from('config')
+      .upsert([{ bar_id: barActuel.id, cle: 'pin_gerant', valeur: pin }], { onConflict: 'bar_id,cle' });
+    if (error) throw error;
+    document.getElementById('profil-pin').value = '';
+    afficherMessageProfil('✅ PIN Gérant mis à jour !');
+  } catch (err) {
+    afficherMessageProfil('❌ Erreur : ' + err.message, false);
+  }
 }
