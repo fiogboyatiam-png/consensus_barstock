@@ -1,10 +1,10 @@
 // ==================== SUPABASE ====================
 const SUPABASE_URL = "https://jwskhozdukcurjnpsgtm.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3c2tob3pkdWtjdXJqbnBzZ3RtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1ODA0NzcsImV4cCI6MjA5NjE1NjQ3N30.fLkpT9AK7mXdz6HxxVUKyK7fRNDHnjYNk4l_K-qBO30";
-const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3c2tob3pkdWtjdXJqbnBzZ3RtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDU4MDQ3NywiZXhwIjoyMDk2MTU2NDc3fQ.XBUNsxLpFxLhAhBV8ag0Czg0LOT48xvqIc1o6QJtmjI";
+
 const { createClient } = supabase;
 const client = createClient(SUPABASE_URL, SUPABASE_KEY);
-const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
 
 // ==================== STATE ====================
 let boissons = [];
@@ -187,17 +187,94 @@ async function restaurerSession() {
 async function afficherInterfaceAdmin() {
   document.getElementById('ecran-auth').style.display = 'none';
   document.getElementById('ecran-admin').style.display = 'block';
-  document.getElementById('app-principale').style.display = 'none';
-  document.getElementById('ecran-role').style.display = 'none';
-  await chargerTableauAdmin();
-}
 
+  const { data: { session } } = await client.auth.getSession();
+  const token = session?.access_token;
+  if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
+
+  const res = await fetch(
+    'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const { bars, error: errBars } = await res.json();
+  if (errBars) { alert('Erreur : ' + errBars); return; }
+
+  const tbody = document.getElementById('admin-tbody');
+
+  if (!bars || bars.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="admin-vide">Aucun bar enregistré.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = (bars || []).map(b => {
+    const date = new Date(b.created_at).toLocaleDateString('fr-FR');
+    const statutClasse = b.actif ? 'actif' : 'inactif';
+    const statutTxt = b.actif ? 'Actif' : 'Désactivé';
+    const btnClasse = b.actif ? 'action-desactiver' : 'action-activer';
+    const btnTxt = b.actif ? 'Désactiver' : 'Activer';
+
+    // Email
+    const email = b.email || '—';
+
+    // PIN gérant
+    const pinGerant = b.pin_gerant
+      ? `<code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;">${b.pin_gerant}</code>`
+      : '<span style="color:#aaa;">Non défini</span>';
+
+    // Serveuses
+    const serveusesBar = b.serveuses || [];
+    const serveusesHtml = serveusesBar.length === 0
+      ? '<span style="color:#aaa;">Aucune</span>'
+      : serveusesBar.map(s =>
+          `<div style="font-size:12px;">👤 ${escape(s.nom)} — 
+           <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;">${s.code_pin || '—'}</code>
+           </div>`
+        ).join('');
+
+    return `<tr>
+      <td><strong>${escape(b.nom)}</strong></td>
+      <td style="font-size:13px;color:#555;">${escape(email)}</td>
+      <td>${date}</td>
+      <td>${pinGerant}</td>
+      <td>${serveusesHtml}</td>
+      <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
+      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" class="btn-toggle-bar ${btnClasse}">${btnTxt}</button></td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('.btn-toggle-bar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const bar_id = btn.getAttribute('data-bar-id');
+      const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
+      btn.disabled = true;
+
+      const { data: { session } } = await client.auth.getSession();
+      const token = session?.access_token;
+
+      const res = await fetch(
+        'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/admin-toggle-bar',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ bar_id, actif: !actifActuel })
+        }
+      );
+      const result = await res.json();
+      btn.disabled = false;
+      if (result.error) { alert('Erreur : ' + result.error); return; }
+      afficherInterfaceAdmin();
+    });
+  });
+}
 async function chargerTableauAdmin() {
   const tbody = document.getElementById('admin-tbody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">Chargement...</td></tr>';
 
   // Récupérer tous les bars
-  const { data: bars, error: errBars } = await adminClient
+  const { data: bars, error: errBars } = await Client
     .from('bars')
     .select('id, nom, actif, created_at, owner_id')
     .order('created_at', { ascending: false });
@@ -209,12 +286,12 @@ async function chargerTableauAdmin() {
   const users = [];
 
   // Récupérer tous les PIN gérants
-  const { data: configs } = await adminClient.from('config').select('bar_id, cle, valeur').eq('cle', 'pin_gerant');
+  const { data: configs } = await Client.from('config').select('bar_id, cle, valeur').eq('cle', 'pin_gerant');
   const pinsGerant = {};
   (configs || []).forEach(c => { pinsGerant[c.bar_id] = c.valeur; });
 
   // Récupérer toutes les serveuses
-  const { data: toutesServeuses } = await adminClient.from('serveuses').select('bar_id, nom, code_pin');
+  const { data: toutesServeuses } = await Client.from('serveuses').select('bar_id, nom, code_pin');
   const serveusesByBar = {};
   (toutesServeuses || []).forEach(s => {
     if (!serveusesByBar[s.bar_id]) serveusesByBar[s.bar_id] = [];
@@ -260,7 +337,7 @@ async function chargerTableauAdmin() {
       const id = btn.getAttribute('data-bar-id');
       const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
       btn.disabled = true;
-      const { error } = await adminClient.from('bars').update({ actif: !actifActuel }).eq('id', id);
+      const { error } = await Client.from('bars').update({ actif: !actifActuel }).eq('id', id);
       btn.disabled = false;
       if (error) { alert('Erreur : ' + error.message); return; }
       chargerTableauAdmin();
@@ -282,59 +359,30 @@ async function creerBar() {
   if (btn) { btn.disabled = true; btn.innerText = 'Création...'; }
 
   try {
-    // 1. Vérifier qu'aucun bar avec ce nom n'existe déjà (via adminClient qui bypass RLS)
-    const { data: existants } = await adminClient.from('bars').select('id').eq('nom', nom);
-    if (existants && existants.length > 0) {
-      throw new Error('Un bar avec ce nom existe déjà.');
-    }
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
 
-    // 2. Créer le compte via signUp (fonctionne depuis navigateur)
-    //    On utilise un client temporaire pour ne pas déconnecter le super admin
-    const tempClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    const { data: authData, error: authError } = await tempClient.auth.signUp({ email, password });
-    if (authError) throw authError;
-    if (!authData.user) throw new Error('Erreur lors de la création du compte.');
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/admin-inscrire-bar',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ nom, email, password })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
 
-    const newUserId = authData.user.id;
-
-    // 3. Créer le bar via adminClient (bypass RLS — le owner_id n'est pas l'admin)
-    const { data: nouveauBar, error: barError } = await adminClient
-      .from('bars')
-      .insert([{ nom, owner_id: newUserId, email }])
-      .select()
-      .single();
-    if (barError) throw barError;
-
-    // 4. Copier le catalogue modèle
-    const { data: modeles } = await adminClient.from('boissons_modele').select('*');
-    if (modeles && modeles.length > 0) {
-      const copie = modeles.map(b => ({
-        designation: b.designation,
-        categorie: b.categorie,
-        type_bouteille: b.type_bouteille,
-        pu_initial: b.pu_initial,
-        prix_unitaire: b.prix_unitaire,
-        demi_cassier: b.demi_cassier || 0,
-        quart_cassier: b.quart_cassier || 0,
-        quantite_par_cassier: b.quantite_par_cassier,
-        seuil: b.seuil || 6,
-        stock: 0,
-        bar_id: nouveauBar.id
-      }));
-      await adminClient.from('boissons').insert(copie);
-    }
-
-    // 5. Config initiale
-    await adminClient.from('config').insert([{ bar_id: nouveauBar.id, cle: 'total_fournisseur', valeur: '0' }]);
-
-    // Vider le formulaire
     document.getElementById('new-bar-nom').value = '';
     document.getElementById('new-bar-email').value = '';
     document.getElementById('new-bar-password').value = '';
     document.getElementById('admin-erreur').style.display = 'none';
 
     toast('✅ Bar "' + nom + '" créé avec succès !');
-    await chargerTableauAdmin();
+    await afficherInterfaceAdmin();
 
   } catch (err) {
     afficherErreurAdmin('Erreur : ' + err.message);
