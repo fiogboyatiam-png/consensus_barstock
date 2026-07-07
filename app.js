@@ -210,8 +210,10 @@ async function afficherInterfaceAdmin() {
     const date = new Date(b.created_at).toLocaleDateString('fr-FR');
     const statutClasse = b.actif ? 'actif' : 'inactif';
     const statutTxt = b.actif ? 'Actif' : 'Désactivé';
-    const btnClasse = b.actif ? 'action-desactiver' : 'action-activer';
-    const btnTxt = b.actif ? 'Désactiver' : 'Activer';
+    const btnStyle = b.actif
+  ? 'background:#ffebee; color:#c62828; border:1px solid #ef9a9a; padding:7px 16px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer;'
+  : 'background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; padding:7px 16px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer;';
+const btnTxt = b.actif ? '🔴 Désactiver' : '🟢 Activer';
 
     // Email
     const email = b.email || '—';
@@ -238,7 +240,9 @@ async function afficherInterfaceAdmin() {
       <td>${pinGerant}</td>
       <td>${serveusesHtml}</td>
       <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
-      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" class="btn-toggle-bar ${btnClasse}">${btnTxt}</button></td>
+      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
+  style="background:${b.actif ? '#ffebee' : '#e8f5e9'};color:${b.actif ? '#c62828' : '#2e7d32'};border:1px solid ${b.actif ? '#ef9a9a' : '#a5d6a7'};padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;"
+  class="btn-toggle-bar">${b.actif ? '🔴 Désactiver' : '🟢 Activer'}</button></td>
     </tr>`;
   }).join('');
 
@@ -269,81 +273,7 @@ async function afficherInterfaceAdmin() {
     });
   });
 }
-async function chargerTableauAdmin() {
-  const tbody = document.getElementById('admin-tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888;">Chargement...</td></tr>';
 
-  // Récupérer tous les bars
-  const { data: bars, error: errBars } = await Client
-    .from('bars')
-    .select('id, nom, actif, created_at, owner_id')
-    .order('created_at', { ascending: false });
-
-  if (errBars) { alert('Erreur chargement bars : ' + errBars.message); return; }
-
-  // Récupérer les emails via adminClient (auth.users n'est pas accessible depuis le client)
-  // On utilise la table bars avec colonne email si dispo, sinon on affiche owner_id
-  const users = [];
-
-  // Récupérer tous les PIN gérants
-  const { data: configs } = await Client.from('config').select('bar_id, cle, valeur').eq('cle', 'pin_gerant');
-  const pinsGerant = {};
-  (configs || []).forEach(c => { pinsGerant[c.bar_id] = c.valeur; });
-
-  // Récupérer toutes les serveuses
-  const { data: toutesServeuses } = await Client.from('serveuses').select('bar_id, nom, code_pin');
-  const serveusesByBar = {};
-  (toutesServeuses || []).forEach(s => {
-    if (!serveusesByBar[s.bar_id]) serveusesByBar[s.bar_id] = [];
-    serveusesByBar[s.bar_id].push(s);
-  });
-
-  if (!tbody) return;
-  if (!bars || bars.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="vide">Aucun bar enregistré</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = bars.map(b => {
-    const date = new Date(b.created_at).toLocaleDateString('fr-FR');
-    const email = b.email || '<em style="color:#aaa;font-size:11px;">Voir Supabase Auth</em>';
-    const pin = pinsGerant[b.id] || '<em style="color:#aaa;">Non défini</em>';
-    const serveuses = serveusesByBar[b.id] || [];
-    const serveusesTxt = serveuses.length === 0
-      ? '<em style="color:#aaa;">Aucune</em>'
-      : serveuses.map(s => `<span style="display:inline-block;background:#e8f5e9;border-radius:4px;padding:2px 6px;margin:2px;font-size:12px;">👤 ${escape(s.nom)} — PIN: <strong>${s.code_pin}</strong></span>`).join('');
-    const statutTxt = b.actif ? 'Actif' : 'Désactivé';
-    const statutCouleur = b.actif ? '#2e7d32' : '#c62828';
-    const btnTxt = b.actif ? 'Désactiver' : 'Activer';
-    const btnCoul = b.actif ? '#c62828' : '#2e7d32';
-
-    return `<tr style="border-bottom:1px solid #eee;vertical-align:top;">
-      <td style="padding:12px;font-weight:700;">${escape(b.nom)}</td>
-      <td style="padding:12px;font-size:13px;color:#555;">${email}</td>
-      <td style="padding:12px;font-size:13px;color:#555;">${date}</td>
-      <td style="padding:12px;font-size:13px;"><span style="background:#fff3e0;border-radius:4px;padding:3px 8px;font-weight:700;color:#e65100;">${pin}</span></td>
-      <td style="padding:12px;font-size:13px;">${serveusesTxt}</td>
-      <td style="padding:12px;font-weight:600;color:${statutCouleur};">${statutTxt}</td>
-      <td style="padding:12px;">
-        <button data-bar-id="${b.id}" data-bar-actif="${b.actif}"
-          style="background:${btnCoul};color:white;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;"
-          class="btn-toggle-bar">${btnTxt}</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  tbody.querySelectorAll('.btn-toggle-bar').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-bar-id');
-      const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
-      btn.disabled = true;
-      const { error } = await Client.from('bars').update({ actif: !actifActuel }).eq('id', id);
-      btn.disabled = false;
-      if (error) { alert('Erreur : ' + error.message); return; }
-      chargerTableauAdmin();
-    });
-  });
-}
 
 // CRÉER UN BAR (super admin)
 async function creerBar() {
@@ -1521,7 +1451,7 @@ function lancerApplicationAvecRole() {
   document.getElementById('ecran-role').style.display = 'none';
   document.getElementById('app-principale').style.display = 'block';
   const nomEl = document.getElementById('nom-bar-actuel');
-  if (nomEl) nomEl.innerText = `Consensus BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
+  if (nomEl) nomEl.innerText = `BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
   appliquerRestrictions();
   activerRealtime();
   initialiserApplication().then(() => {
@@ -1669,7 +1599,7 @@ async function changerNomBar() {
     localStorage.setItem('barstock_bar_nom', nom);
     // Mettre à jour l'en-tête
     const nomEl = document.getElementById('nom-bar-actuel');
-    if (nomEl) nomEl.innerText = `Consensus BarStock - ${nom} (${utilisateurActuel.nom})`;
+    if (nomEl) nomEl.innerText = `BarStock - ${nom} (${utilisateurActuel.nom})`;
     document.getElementById('profil-nom').value = '';
     document.getElementById('profil-nom').placeholder = nom;
     afficherMessageProfil('✅ Nom du bar mis à jour !');

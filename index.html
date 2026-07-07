@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Consensus BarStock</title>
+  <title>BarStock</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
         <path d="M26 29v15M34 29v15" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
       </svg>
     </div>
-    <h1>Consensus BarStock</h1>
+    <h1>BarStock</h1>
     <p class="auth-subtitle">Gestion de stock pour bars</p>
 
     <div id="panel-connexion" class="auth-panel">
@@ -46,7 +46,7 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; background:#0f3d22; padding:18px 24px; border-radius:12px; color:white;">
       <div>
         <div style="font-size:22px; font-weight:800;">🛡️ Super Administration</div>
-        <div style="opacity:0.7; font-size:13px; margin-top:2px;">Consensus BarStock — Gestion globale des bars</div>
+        <div style="opacity:0.7; font-size:13px; margin-top:2px;">BarStock — Gestion globale des bars</div>
       </div>
       <button onclick="seDeconnecterAdmin()"
         style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
@@ -85,7 +85,7 @@
     <div style="background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
-        <button onclick="chargerTableauAdmin()"
+        <button onclick="afficherInterfaceAdmin()"
           style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
           🔄 Actualiser
         </button>
@@ -117,7 +117,7 @@
 <div id="ecran-role" style="display:none; min-height:100vh; background:#0f3d22;
   align-items:center; justify-content:center; flex-direction:column; gap:20px;">
   <div style="text-align:center; color:white; margin-bottom:10px;">
-    <div style="font-size:28px; font-weight:800;">Consensus BarStock</div>
+    <div style="font-size:28px; font-weight:800;">BarStock</div>
     <div style="opacity:0.7; margin-top:5px;" id="role-bar-nom"></div>
   </div>
   <div style="display:flex; flex-direction:column; gap:14px; width:300px;">
@@ -168,17 +168,21 @@
 
   <div id="entete-fixe">
     <header>
-      <span id="nom-bar-actuel">🍺 Consensus BarStock</span>
+      <span id="nom-bar-actuel">🍺BarStock</span>
       <div class="header-right">
-        <button onclick="seDeconnecter()"
-          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
-          🚪 Déconnexion
-        </button>
+        
         <button class="btn" onclick="changerUtilisateur()" style="background:rgba(255,255,255,0.15); font-size:13px;">
-          🔄 Changer
+          Changer
         </button>
         <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
+        <button class="nav-btn gerant-only" data-section="profil" onclick="showSection('profil')">⚙️ Profil</button>
+        <button onclick="seDeconnecter()"
+          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
+          Déconnexion
+        </button>
       </div>
+      
+    
     </header>
 
     <!-- Stats du jour -->
@@ -201,7 +205,7 @@
       <button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
       <button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">📊 Serveuses</button>
       <button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
-      <button class="nav-btn gerant-only" data-section="profil" onclick="showSection('profil')">⚙️ Profil</button>
+      
     </nav>
   </div>
 
