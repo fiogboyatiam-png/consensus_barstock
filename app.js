@@ -1256,76 +1256,164 @@ function afficherBoissonsCommande(recherche) {
   div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
-function ajouterArticleCommande(id) {
+async function ajouterArticleCommande(id) {
   if (!commandeActive) return;
   const b = boissons.find(i => i.id === id); if (!b) return;
   const articles = commandeActive.articles || [];
   const existe = articles.find(a => a.id === id);
-  if (existe) { existe.qte += 1; } else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
+  const qteDejaCommandee = existe ? existe.qte : 0;
+
+  if (qteDejaCommandee >= b.stock) {
+    toast(`⚠️ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'warning');
+    return;
+  }
+
+  // Décompter en DB
+  const { error } = await client.from('boissons')
+    .update({ stock: b.stock - 1 })
+    .eq('id', id).eq('bar_id', barActuel.id);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  // Mettre à jour localement
+  b.stock -= 1;
+
+  if (existe) { existe.qte += 1; }
+  else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
+
   commandeActive.articles = articles;
   commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
   afficherArticlesCommande();
+  afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
 }
 
-function retirerArticleCommande(index) {
+async function retirerArticleCommande(index) {
   if (!commandeActive) return;
   const articles = commandeActive.articles || [];
-  if (articles[index].qte > 1) { articles[index].qte -= 1; } else { articles.splice(index, 1); }
+  const article = articles[index];
+  if (!article) return;
+
+  const b = boissons.find(i => i.id === article.id);
+  if (!b) return;
+
+  // Remettre le stock en DB
+  const { error } = await client.from('boissons')
+    .update({ stock: b.stock + 1 })
+    .eq('id', article.id).eq('bar_id', barActuel.id);
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+
+  // Mettre à jour localement
+  b.stock += 1;
+
+  if (articles[index].qte > 1) {
+    articles[index].qte -= 1;
+  } else {
+    articles.splice(index, 1);
+  }
+
   commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
   afficherArticlesCommande();
+  afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
 }
 
 async function sauvegarderCommande() {
   if (!commandeActive) return;
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
-  const { error } = await client.from('commandes').update({ articles: commandeActive.articles, total: commandeActive.total, note }).eq('id', commandeActive.id);
+
+  const { error } = await client.from('commandes')
+    .update({ articles: commandeActive.articles, total: commandeActive.total, note })
+    .eq('id', commandeActive.id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
+
   toast('💾 Commande sauvegardée !');
+  document.getElementById('modal-commande').classList.remove('visible');
   await chargerCommandes();
+}
+
+function fermerModalCommande() {
+  document.getElementById('modal-commande').classList.remove('visible');
+  commandeActive = null;
 }
 
 async function encaisserCommandeId(id) { const cmd = commandesOuvertes.find(c => c.id === id); if (cmd) { commandeActive = cmd; await encaisserCommande(); } }
 
 async function encaisserCommande() {
   if (!commandeActive) return;
-  await sauvegarderCommande();
+  const cmdId = commandeActive.id;
+  const cmdArticles = [...commandeActive.articles];
   const cmd = commandeActive;
-  if (!cmd.articles || cmd.articles.length === 0) { toast('⚠️ Aucun article dans la commande', 'warning'); return; }
-  const ids = cmd.articles.map(a => a.id);
-  const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
-  for (const a of cmd.articles) {
-    const bFrais = stockFrais?.find(b => b.id === a.id);
-    if (bFrais && a.qte > bFrais.stock) { toast(`❌ Stock insuffisant pour ${bFrais.designation} (reste ${bFrais.stock})`, 'error'); await initialiserApplication(); return; }
+
+  if (!cmdArticles || cmdArticles.length === 0) {
+    toast('⚠️ Aucun article dans la commande', 'warning');
+    return;
   }
+
+  // Sauvegarder d'abord
+  const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
+  const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+  await client.from('commandes')
+    .update({ articles: cmdArticles, total: cmd.total, note: note || label })
+    .eq('id', cmdId);
+
+  // Calculer total et bénéfice
   let total = 0, benef = 0;
-  for (const a of cmd.articles) {
+  for (const a of cmdArticles) {
     const b = boissons.find(i => i.id === a.id); if (!b) continue;
     const qpc = b.quantite_par_cassier || (b.type_bouteille === 'petit bouteille' ? 24 : 12);
     const achat = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
-    total += a.prix * a.qte; benef += (a.prix - achat) * a.qte;
+    total += a.prix * a.qte;
+    benef += (a.prix - achat) * a.qte;
   }
-  const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
-  const note = (document.getElementById('modal-cmd-note')?.value.trim()) || label;
+
   try {
-    const { data: vente, error: eV } = await client.from('ventes').insert([{ bar_id: barActuel.id, total, benefice: benef, benef, note, serveuse: utilisateurActuel?.nom || null }]).select().single();
+    // Enregistrer la vente
+    const { data: vente, error: eV } = await client.from('ventes')
+      .insert([{ bar_id: barActuel.id, total, benefice: benef, benef,
+        note: note || label, serveuse: utilisateurActuel?.nom || null }])
+      .select().single();
     if (eV) throw eV;
-    for (const a of cmd.articles) {
-      await client.from('vente_articles').insert([{ vente_id: vente.id, bar_id: barActuel.id, boisson_designation: a.designation, quantite: a.qte, prix_unitaire: a.prix }]);
-      const b = boissons.find(i => i.id === a.id);
-      if (b) await client.from('boissons').update({ stock: b.stock - a.qte }).eq('id', a.id).eq('bar_id', barActuel.id);
+
+    // Enregistrer les articles — stock déjà décompté à l'ajout
+    for (const a of cmdArticles) {
+      await client.from('vente_articles').insert([{
+        vente_id: vente.id, bar_id: barActuel.id,
+        boisson_designation: a.designation,
+        quantite: a.qte, prix_unitaire: a.prix
+      }]);
     }
-    await client.from('commandes').update({ statut: 'payee' }).eq('id', cmd.id);
+
+    // Fermer la commande
+    await client.from('commandes').update({ statut: 'payee' }).eq('id', cmdId);
+
     fermerModalCommande();
     toast('✅ Commande encaissée — ' + formatPrix(total));
-    await initialiserApplication(); await chargerCommandes();
+    await initialiserApplication();
+    await chargerCommandes();
+
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function annulerCommande(id) {
   if (!confirm('Annuler cette commande ?')) return;
-  const { error } = await client.from('commandes').update({ statut: 'annulee' }).eq('id', id);
+
+  // Récupérer la commande pour remettre le stock
+  const cmd = commandesOuvertes.find(c => c.id === id);
+  if (cmd && cmd.articles && cmd.articles.length > 0) {
+    for (const a of cmd.articles) {
+      const b = boissons.find(i => i.id === a.id);
+      if (b) {
+        await client.from('boissons')
+          .update({ stock: b.stock + a.qte })
+          .eq('id', a.id).eq('bar_id', barActuel.id);
+      }
+    }
+  }
+
+  const { error } = await client.from('commandes')
+    .update({ statut: 'annulee' }).eq('id', id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
-  toast('🗑️ Commande annulée');
+
+  toast('🗑️ Commande annulée — stock remis à jour');
+  await initialiserApplication();
   await chargerCommandes();
 }
 
