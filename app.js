@@ -469,24 +469,24 @@ function afficherCatalogue() {
     const st = b.stock === 0 ? '<span class="tag tag-rouge">Épuisé</span>'
       : (b.stock <= b.seuil ? '<span class="tag tag-orange">Seuil Alerte</span>' : '<span class="tag tag-vert">Stock OK</span>');
     const prix = `<div style="font-size:13px;">📦 1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br>🥛 ½ Cas. : ${formatPrix(b.demi_cassier || Math.round(b.pu_initial/2))}${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br>🧪 ¼ Cas. : ${formatPrix(b.quart_cassier)}`:''}</div>`;
-    return `<tr><td><strong>${b.designation}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">🗑️</button></td></tr>`;
+    return `<tr><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">🗑️</button></td></tr>`;
   }).join('');
   rafraichirIcones();
 }
 
 async function modifierStock(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
-  const s = prompt(`Stock de ${b.designation}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
+  const s = prompt(`Stock de ${escape(b.designation)}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<0) { alert("❌ Nombre valide requis"); return; }
-  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Stock ${b.designation} → ${n}`); await initialiserApplication(); }
+  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Stock ${escape(b.designation)} → ${n}`); await initialiserApplication(); }
   catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function modifierSeuil(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
-  const s = prompt(`Seuil d'alerte pour ${b.designation}\nActuel : ${b.seuil||6}`, b.seuil||6); if (s===null) return;
+  const s = prompt(`Seuil d'alerte pour ${escape(b.designation)}\nActuel : ${b.seuil||6}`, b.seuil||6); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<1) { alert("❌ Seuil invalide"); return; }
-  try { const { error } = await client.from('boissons').update({ seuil: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Seuil ${b.designation} → ${n}`); await initialiserApplication(); }
+  try { const { error } = await client.from('boissons').update({ seuil: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Seuil ${escape(b.designation)} → ${n}`); await initialiserApplication(); }
   catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -520,7 +520,7 @@ async function ajouterBoisson(e) {
 async function modifierPrixUnitaire(id) {
   const b = boissons.find(i => i.id === id);
   if (!b) return;
-  const rep = prompt(`Prix vente unitaire de ${b.designation} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire);
+  const rep = prompt(`Prix vente unitaire de ${escape(b.designation)} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire);
   if (rep === null) return;
   const nouveau = parseInt(rep);
   if (isNaN(nouveau) || nouveau < 0) { toast('❌ Prix invalide', 'error'); return; }
@@ -622,7 +622,7 @@ function afficherEtatProduits() {
     if (b.stock===0) { rs='class="row-rupture"'; st='<span class="tag tag-rouge">🔴 RUPTURE</span>'; }
     else if (b.stock<=seuil) { rs='class="row-alerte"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
     else { rs='class="row-ok"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
-    return `<tr ${rs}><td><strong>${b.designation}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
+    return `<tr ${rs}><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
   }).join('');
   rafraichirIcones();
 }
@@ -690,7 +690,7 @@ async function entreeStock(id, type) {
   if (type==='cassier') { qte=qpc; cout=b.pu_initial; txt="1 cassier entier"; }
   else if (type==='demi') { qte=Math.round(qpc/2); cout=b.demi_cassier||Math.round(b.pu_initial/2); txt="un demi-cassier"; }
   else if (type==='quart') { qte=Math.round(qpc/4); cout=b.quart_cassier||Math.round(b.pu_initial/4); txt="un quart-cassier"; }
-  if (!confirm(`Ajouter ${txt} (${qte} btl) pour ${b.designation} ?`)) return;
+  if (!confirm(`Ajouter ${txt} (${qte} btl) pour ${escape(b.designation)} ?`)) return;
   try {
     const { error:eS } = await client.from('boissons').update({ stock:b.stock+qte }).eq('id', id).eq('bar_id', barActuel.id);
     if (eS) throw eS;
@@ -700,20 +700,20 @@ async function entreeStock(id, type) {
     const existing=commandeEnCours.find(c=>c.designation===b.designation&&c.type===txt);
     if (existing) { existing.qte+=qte; existing.cout+=cout; }
     else commandeEnCours.push({ designation:b.designation, type:txt, qte, cout });
-    toast(`✅ +${qte} btl ${b.designation}`); await initialiserApplication();
+    toast(`✅ +${qte} btl ${escape(b.designation)}`); await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function ajusterRetour(id, delta) {
   const b = boissons.find(i => i.id===id); if (!b) return;
-  if (delta<0&&b.stock<=0) { alert(`❌ Stock de ${b.designation} déjà à 0.`); return; }
+  if (delta<0&&b.stock<=0) { alert(`❌ Stock de ${escape(b.designation)} déjà à 0.`); return; }
   const qpc = b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
   const pAchat = b.pu_initial>0?Math.round(b.pu_initial/qpc):0;
-  if (delta<0&&pAchat===0) { alert(`❌ Prix d'achat non configuré pour ${b.designation}.`); return; }
-  const typeOp = delta>0?`🔄 RETOUR CLIENT : ${b.designation}`:`⚠️ PERTE/CASSE : ${b.designation}`;
+  if (delta<0&&pAchat===0) { alert(`❌ Prix d'achat non configuré pour ${escape(b.designation)}.`); return; }
+  const typeOp = delta>0?`🔄 RETOUR CLIENT : ${escape(b.designation)}`:`⚠️ PERTE/CASSE : ${escape(b.designation)}`;
   const tImpact = delta>0?-(b.prix_unitaire):0;
   const bImpact = delta>0?-(b.prix_unitaire-pAchat):-pAchat;
-  const msg = delta>0?`Retour client : ${b.designation}. Stock +1, vente déduite (${formatPrix(b.prix_unitaire)}).`:`Perte/casse : ${b.designation}. Stock -1, perte ${formatPrix(pAchat)}.`;
+  const msg = delta>0?`Retour client : ${escape(b.designation)}. Stock +1, vente déduite (${formatPrix(b.prix_unitaire)}).`:`Perte/casse : ${escape(b.designation)}. Stock -1, perte ${formatPrix(pAchat)}.`;
   if (!confirm(msg)) return;
   try {
     const { error: eS } = await client.from('boissons').update({ stock: b.stock+delta }).eq('id', id); if (eS) throw eS;
@@ -734,13 +734,13 @@ function afficherVentes() {
   div.innerHTML = dispo.map(b => {
     const qte = panier[b.id]||0;
     const affP = b.prix_unitaire>0?`<strong>${formatPrix(b.prix_unitaire)}</strong>`:`<span style="color:#ef6c00;">À définir <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️</button></span>`;
-    return `<div class="produit-vente-card"><div class="produit-vente-infos"><div class="produit-vente-nom">${b.designation}</div><div class="produit-vente-stock">Reste : <span>${b.stock}</span> btl(s)</div><div class="produit-vente-prix">${affP}</div></div><div class="produit-vente-actions"><button class="btn btn-sm" onclick="modifierPanier(${b.id},-1)">−</button><input type="number" class="qte-input" id="qte-${b.id}" value="${qte}" min="0" max="${b.stock}" onchange="saisirQuantiteDirecte(${b.id},this.value,${b.stock})" onfocus="this.select()"><button class="btn btn-sm" onclick="modifierPanier(${b.id},1)">+</button></div></div>`;
+    return `<div class="produit-vente-card"><div class="produit-vente-infos"><div class="produit-vente-nom">${escape(b.designation)}</div><div class="produit-vente-stock">Reste : <span>${b.stock}</span> btl(s)</div><div class="produit-vente-prix">${affP}</div></div><div class="produit-vente-actions"><button class="btn btn-sm" onclick="modifierPanier(${b.id},-1)">−</button><input type="number" class="qte-input" id="qte-${b.id}" value="${qte}" min="0" max="${b.stock}" onchange="saisirQuantiteDirecte(${b.id},this.value,${b.stock})" onfocus="this.select()"><button class="btn btn-sm" onclick="modifierPanier(${b.id},1)">+</button></div></div>`;
   }).join('');
 }
 
 function modifierPanier(id, delta) {
   const b = boissons.find(i => i.id===id); if (!b) return;
-  if (b.prix_unitaire<=0&&delta>0) { alert(`❌ Fixe d'abord le prix de ${b.designation}.`); return; }
+  if (b.prix_unitaire<=0&&delta>0) { alert(`❌ Fixe d'abord le prix de ${escape(b.designation)}.`); return; }
   const nv = Math.max(0, Math.min(b.stock, (panier[id]||0)+delta));
   if (nv===0) delete panier[id]; else panier[id]=nv;
   const el = document.getElementById(`qte-${id}`); if (el) el.value=nv;
@@ -751,7 +751,7 @@ function saisirQuantiteDirecte(id, valeur, stockDispo) {
   let qte = parseInt(valeur); if (isNaN(qte)||qte<0) qte=0;
   if (qte>stockDispo) { alert(`⚠️ Stock insuffisant ! Max : ${stockDispo}`); qte=stockDispo; }
   const b = boissons.find(i => i.id===id); if (!b) return;
-  if (b.prix_unitaire<=0&&qte>0) { alert(`❌ Fixe d'abord le prix de ${b.designation}.`); afficherVentes(); return; }
+  if (b.prix_unitaire<=0&&qte>0) { alert(`❌ Fixe d'abord le prix de ${escape(b.designation)}.`); afficherVentes(); return; }
   if (qte===0) delete panier[id]; else panier[id]=qte;
   const el = document.getElementById(`qte-${id}`); if (el) el.value=qte;
   mettreAJourTicket();
@@ -774,7 +774,7 @@ function mettreAJourTicket() {
     const qte = panier[id], sous = b.prix_unitaire * qte; tv += sous;
     const qpc = b.quantite_par_cassier || (b.type_bouteille === "petit bouteille" ? 24 : 12);
     ta += (b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0) * qte;
-    html += `<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd;font-size:14px;"><span><strong>${b.designation}</strong> × ${qte}</span><span>${formatPrix(sous)}</span></li>`;
+    html += `<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd;font-size:14px;"><span><strong>${escape(b.designation)}</strong> × ${qte}</span><span>${formatPrix(sous)}</span></li>`;
   }
   html += '</ul>';
   detail.innerHTML = html;
@@ -796,7 +796,7 @@ function ouvrirModalVente() {
   for (const id in panier) {
     const b = boissons.find(i => i.id==id); if (!b) continue;
     const sous=b.prix_unitaire*panier[id]; total+=sous;
-    html+=`<div class="modal-recap-ligne"><span>${b.designation} × ${panier[id]}</span><span>${formatPrix(sous)}</span></div>`;
+    html+=`<div class="modal-recap-ligne"><span>${escape(b.designation)} × ${panier[id]}</span><span>${formatPrix(sous)}</span></div>`;
   }
   html+=`<div class="modal-recap-ligne"><span>TOTAL</span><span style="color:var(--primary);">${formatPrix(total)}</span></div>`;
   const c = document.getElementById('modal-recap-contenu'); if (c) c.innerHTML=html;
@@ -811,7 +811,7 @@ function fermerModalVente() { document.getElementById('modal-confirm-vente').cla
 async function confirmerVenteFinale() {
   for (const id in panier) {
     const b = boissons.find(i => i.id==id); if (!b) continue;
-    if (panier[id]>b.stock) { fermerModalVente(); toast(`❌ Stock insuffisant pour ${b.designation} !`,'error'); await initialiserApplication(); return; }
+    if (panier[id]>b.stock) { fermerModalVente(); toast(`❌ Stock insuffisant pour ${escape(b.designation)} !`,'error'); await initialiserApplication(); return; }
   }
   const note = (document.getElementById('note-vente')?.value || '').trim();
   fermerModalVente();
@@ -824,7 +824,7 @@ async function validerVente(note = '') {
   const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
   for (const b of stockFrais || []) {
     const qte = panier[b.id];
-    if (qte > b.stock) { toast(`❌ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'error'); await initialiserApplication(); return; }
+    if (qte > b.stock) { toast(`❌ Stock insuffisant pour ${escape(b.designation)} (reste ${b.stock})`, 'error'); await initialiserApplication(); return; }
   }
   let tv=0, tb=0; const arts=[];
   for (const id in panier) {
@@ -1037,7 +1037,7 @@ async function chargerEspaceFournisseur() {
       tbL.innerHTML = livraisons.map(h => `
         <tr>
           <td style="padding:10px;">${h.created_at ? new Date(h.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-'}</td>
-          <td style="padding:10px;" class="txt-secondaire">${h.commentaire||'-'}</td>
+          <td style="padding:10px;" class="txt-secondaire">${escape(h.commentaire||'-')}</td>
           <td style="padding:10px;font-weight:bold;color:#2e7d32;">${formatPrix(h.montant)}</td>
         </tr>`).join('');
     }
@@ -1200,15 +1200,15 @@ function afficherCommandes() {
   div.innerHTML = commandesOuvertes.map(cmd => {
     const articles = cmd.articles || [];
     const duree = dureeDepuis(cmd.created_at);
-    const detail = articles.length > 0 ? articles.map(a => `${a.designation} x${a.qte}`).join(', ') : 'Aucun article';
-    const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+    const detail = articles.length > 0 ? articles.map(a => `${escape(a.designation)} x${a.qte}`).join(', ') : 'Aucun article';
+    const label = cmd.client_nom ? `${escape(cmd.table_num)} — ${escape(cmd.client_nom)}` : escape(cmd.table_num);
     return `<div class="carte-commande">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <div><span style="font-weight:700;font-size:15px;">${label}</span><span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
         <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
       </div>
       <div style="font-size:13px;margin-bottom:10px;" class="txt-secondaire">${detail}</div>
-      ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${cmd.note}</div>` : ''}
+      ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${escape(cmd.note)}</div>` : ''}
       <div style="display:flex;gap:8px;">
         <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">✏️ Modifier</button>
         <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId(${cmd.id})">✅ Encaisser</button>
@@ -1243,7 +1243,7 @@ function afficherArticlesCommande() {
   const articles = commandeActive.articles || [];
   if (articles.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;margin-bottom:8px;">Aucun article ajouté</div>'; return; }
   const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-  div.innerHTML = `<div class="bloc-articles-commande">${articles.map((a, i) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:13px;">${a.designation} × ${a.qte}</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span><button onclick="retirerArticleCommande(${i})" style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button></div></div>`).join('')}<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;"><span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span></div></div>`;
+  div.innerHTML = `<div class="bloc-articles-commande">${articles.map((a, i) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:13px;">${escape(a.designation)} × ${a.qte}</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span><button onclick="retirerArticleCommande(${i})" style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button></div></div>`).join('')}<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;"><span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span></div></div>`;
 }
 
 function filtrerBoissonsCommande() { const q = document.getElementById('modal-cmd-search')?.value || ''; afficherBoissonsCommande(q); }
@@ -1254,7 +1254,7 @@ function afficherBoissonsCommande(recherche) {
   const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme)) .sort((a,b) => a.designation.localeCompare(b.designation));   // ← tri alphabétique;
   
   if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
-  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
+  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${escape(b.designation)}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
 // ==================== COMMANDES (CORRIGÉ) ====================
@@ -1280,7 +1280,7 @@ function ajouterArticleCommande(id) {
   if (!b) return;
 
   if (b.stock <= 0) {
-    toast(`⚠️ Stock insuffisant pour ${b.designation}`, 'warning');
+    toast(`⚠️ Stock insuffisant pour ${escape(b.designation)}`, 'warning');
     return;
   }
 
@@ -1435,7 +1435,7 @@ function ouvrirModalEnvoyerTable() {
   const div = document.getElementById('modal-tables-liste');
   if (div) {
     div.innerHTML = commandesOuvertes.map(cmd => {
-      const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
+     const label = cmd.client_nom ? `${escape(cmd.table_num)} — ${escape(cmd.client_nom)}` : escape(cmd.table_num);
       const nb = (cmd.articles || []).reduce((s, a) => s + a.qte, 0);
       return `<button onclick="envoyerPanierVersTable(${cmd.id})" class="btn-choix-table"><strong>${label}</strong><span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span></button>`;
     }).join('');
@@ -1538,7 +1538,14 @@ async function afficherChoixServeuse() {
     div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
     return;
   }
-  div.innerHTML = serveuses.map(s => `<button onclick="selectionnerServeuse(${s.id}, '${s.nom}')" class="btn-choix-serveuse">👤 ${s.nom}</button>`).join('');
+  div.innerHTML = serveuses.map(s =>
+    `<button data-id="${s.id}" data-nom="${escape(s.nom)}" class="btn-choix-serveuse">👤 ${escape(s.nom)}</button>`
+  ).join('');
+  div.querySelectorAll('.btn-choix-serveuse').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectionnerServeuse(parseInt(btn.dataset.id), btn.dataset.nom);
+    });
+  });
 }
 
 let serveuseSelectionnee = null;
