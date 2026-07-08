@@ -1260,105 +1260,65 @@ function afficherBoissonsCommande(recherche) {
 // ==================== COMMANDES (CORRIGÉ) ====================
 
 
-async function ajouterArticleCommande(id) {
-  if (!commandeActive || ajoutEnCours) return;
-  ajoutEnCours = true;
-
-  try {
-    // Recharger la boisson fraîche depuis le tableau local (plus fiable)
-    let b = boissons.find(i => i.id === id);
+// Écritures différées vers Supabase (évite un appel réseau par clic)
+const syncStockTimers = {};
+function planifierSyncStock(boissonId) {
+  clearTimeout(syncStockTimers[boissonId]);
+  syncStockTimers[boissonId] = setTimeout(async () => {
+    const b = boissons.find(i => i.id === boissonId);
     if (!b) return;
-
-    const articles = commandeActive.articles || [];
-    const existe = articles.find(a => a.id === id);
-    const qteDeja = existe ? existe.qte : 0;
-
-    // Vérification corrigée
-    if (qteDeja + 1 > b.stock) {
-      toast(`⚠️ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'warning');
-      return;
-    }
-
-    // Mise à jour DB
-    const { error } = await client
-      .from('boissons')
-      .update({ stock: b.stock - 1 })
-      .eq('id', id)
-      .eq('bar_id', barActuel.id);
-
-    if (error) {
-      toast('❌ Erreur serveur : ' + error.message, 'error');
-      return;
-    }
-
-    // Mise à jour locale
-    b.stock -= 1;
-
-    if (existe) {
-      existe.qte += 1;
-    } else {
-      articles.push({
-        id: b.id,
-        designation: b.designation,
-        prix: b.prix_unitaire,
-        qte: 1
-      });
-    }
-
-    commandeActive.articles = articles;
-    commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-
-    afficherArticlesCommande();
-    afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
-
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-  } finally {
-    ajoutEnCours = false;
-  }
+    const { error } = await client.from('boissons')
+      .update({ stock: b.stock })
+      .eq('id', boissonId).eq('bar_id', barActuel.id);
+    if (error) toast('❌ Sync stock : ' + error.message, 'error');
+  }, 500); // écrit 0.5s après le dernier clic sur ce produit
 }
 
-async function retirerArticleCommande(index) {
-  if (!commandeActive || ajoutEnCours) return;
-  ajoutEnCours = true;
+function ajouterArticleCommande(id) {
+  if (!commandeActive) return;
+  const b = boissons.find(i => i.id === id);
+  if (!b) return;
 
-  try {
-    const articles = commandeActive.articles || [];
-    const article = articles[index];
-    if (!article) return;
-
-    const b = boissons.find(i => i.id === article.id);
-    if (!b) return;
-
-    const { error } = await client
-      .from('boissons')
-      .update({ stock: b.stock + 1 })
-      .eq('id', article.id)
-      .eq('bar_id', barActuel.id);
-
-    if (error) {
-      toast('❌ ' + error.message, 'error');
-      return;
-    }
-
-    b.stock += 1;
-
-    if (article.qte > 1) {
-      article.qte -= 1;
-    } else {
-      articles.splice(index, 1);
-    }
-
-    commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-
-    afficherArticlesCommande();
-    afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
-
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-  } finally {
-    ajoutEnCours = false;
+  if (b.stock <= 0) {
+    toast(`⚠️ Stock insuffisant pour ${b.designation}`, 'warning');
+    return;
   }
+
+  // Mise à jour locale immédiate — chaque clic compte, aucun n'est perdu
+  b.stock -= 1;
+
+  const articles = commandeActive.articles || [];
+  const existe = articles.find(a => a.id === id);
+  if (existe) { existe.qte += 1; }
+  else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
+
+  commandeActive.articles = articles;
+  commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
+  afficherArticlesCommande();
+  afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+
+  planifierSyncStock(id); // écriture DB différée, non bloquante
+}
+
+function retirerArticleCommande(index) {
+  if (!commandeActive) return;
+  const articles = commandeActive.articles || [];
+  const article = articles[index];
+  if (!article) return;
+
+  const b = boissons.find(i => i.id === article.id);
+  if (b) b.stock += 1;
+
+  if (article.qte > 1) { article.qte -= 1; }
+  else { articles.splice(index, 1); }
+
+  commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
+  afficherArticlesCommande();
+  afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+
+  if (b) planifierSyncStock(article.id);
 }
 async function sauvegarderCommande() {
   if (!commandeActive) return;
