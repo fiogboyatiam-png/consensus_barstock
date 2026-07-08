@@ -1256,47 +1256,70 @@ function afficherBoissonsCommande(recherche) {
   div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
-let ajoutEnCours = false; // verrou global
+// ==================== COMMANDES (CORRIGÉ) ====================
+
+let ajoutEnCours = false;
 
 async function ajouterArticleCommande(id) {
-  if (!commandeActive) return;
-  if (ajoutEnCours) return; // bloquer si déjà en cours
+  if (!commandeActive || ajoutEnCours) return;
   ajoutEnCours = true;
 
   try {
-    const b = boissons.find(i => i.id === id); if (!b) return;
+    // Recharger la boisson fraîche depuis le tableau local (plus fiable)
+    let b = boissons.find(i => i.id === id);
+    if (!b) return;
+
     const articles = commandeActive.articles || [];
     const existe = articles.find(a => a.id === id);
-    const qteDejaCommandee = existe ? existe.qte : 0;
+    const qteDeja = existe ? existe.qte : 0;
 
-    if (qteDejaCommandee >= b.stock) {
+    // Vérification corrigée
+    if (qteDeja + 1 > b.stock) {
       toast(`⚠️ Stock insuffisant pour ${b.designation} (reste ${b.stock})`, 'warning');
       return;
     }
 
-    const { error } = await client.from('boissons')
+    // Mise à jour DB
+    const { error } = await client
+      .from('boissons')
       .update({ stock: b.stock - 1 })
-      .eq('id', id).eq('bar_id', barActuel.id);
-    if (error) { toast('❌ ' + error.message, 'error'); return; }
+      .eq('id', id)
+      .eq('bar_id', barActuel.id);
 
+    if (error) {
+      toast('❌ Erreur serveur : ' + error.message, 'error');
+      return;
+    }
+
+    // Mise à jour locale
     b.stock -= 1;
 
-    if (existe) { existe.qte += 1; }
-    else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
+    if (existe) {
+      existe.qte += 1;
+    } else {
+      articles.push({
+        id: b.id,
+        designation: b.designation,
+        prix: b.prix_unitaire,
+        qte: 1
+      });
+    }
 
     commandeActive.articles = articles;
     commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
     afficherArticlesCommande();
     afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
 
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
   } finally {
-    ajoutEnCours = false; // toujours libérer le verrou
+    ajoutEnCours = false;
   }
 }
 
 async function retirerArticleCommande(index) {
-  if (!commandeActive) return;
-  if (ajoutEnCours) return;
+  if (!commandeActive || ajoutEnCours) return;
   ajoutEnCours = true;
 
   try {
@@ -1307,28 +1330,36 @@ async function retirerArticleCommande(index) {
     const b = boissons.find(i => i.id === article.id);
     if (!b) return;
 
-    const { error } = await client.from('boissons')
+    const { error } = await client
+      .from('boissons')
       .update({ stock: b.stock + 1 })
-      .eq('id', article.id).eq('bar_id', barActuel.id);
-    if (error) { toast('❌ ' + error.message, 'error'); return; }
+      .eq('id', article.id)
+      .eq('bar_id', barActuel.id);
+
+    if (error) {
+      toast('❌ ' + error.message, 'error');
+      return;
+    }
 
     b.stock += 1;
 
-    if (articles[index].qte > 1) {
-      articles[index].qte -= 1;
+    if (article.qte > 1) {
+      article.qte -= 1;
     } else {
       articles.splice(index, 1);
     }
 
     commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
     afficherArticlesCommande();
     afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
 
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
   } finally {
     ajoutEnCours = false;
   }
 }
-
 async function sauvegarderCommande() {
   if (!commandeActive) return;
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
