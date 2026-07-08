@@ -54,7 +54,7 @@ function toggleDarkMode() {
   document.body.classList.toggle('dark');
   const isDark = document.body.classList.contains('dark');
   const btn = document.getElementById('btn-dark');
-  if (btn) btn.innerText = isDark ? '☀️ Mode clair' : '🌙 Mode sombre';
+  if (btn) btn.innerHTML = isDark ? '☀️ Mode clair' : '🌙 Mode sombre';
   localStorage.setItem('darkMode', isDark ? '1' : '0');
 }
 
@@ -62,7 +62,7 @@ function appliquerDarkMode() {
   if (localStorage.getItem('darkMode') === '1') {
     document.body.classList.add('dark');
     const btn = document.getElementById('btn-dark');
-    if (btn) btn.innerText = '☀️ Mode clair';
+    if (btn) btn.innerHTML = '☀️ Mode clair';
   }
 }
 
@@ -188,92 +188,90 @@ async function afficherInterfaceAdmin() {
   document.getElementById('ecran-auth').style.display = 'none';
   document.getElementById('ecran-admin').style.display = 'block';
 
-  const { data: { session } } = await client.auth.getSession();
-  const token = session?.access_token;
-  if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
-
-  const res = await fetch(
-    'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const { bars, error: errBars } = await res.json();
-  if (errBars) { alert('Erreur : ' + errBars); return; }
-
   const tbody = document.getElementById('admin-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>';
 
-  if (!bars || bars.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="admin-vide">Aucun bar enregistré.</td></tr>';
-    return;
-  }
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
 
-  tbody.innerHTML = (bars || []).map(b => {
-    const date = new Date(b.created_at).toLocaleDateString('fr-FR');
-    const statutClasse = b.actif ? 'actif' : 'inactif';
-    const statutTxt = b.actif ? 'Actif' : 'Désactivé';
-    const btnStyle = b.actif
-  ? 'background:#ffebee; color:#c62828; border:1px solid #ef9a9a; padding:7px 16px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer;'
-  : 'background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; padding:7px 16px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer;';
-const btnTxt = b.actif ? '🔴 Désactiver' : '🟢 Activer';
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const { bars, error: errBars } = await res.json();
+    if (errBars) { alert('Erreur : ' + errBars); return; }
 
-    // Email
-    const email = b.email || '—';
+    if (!bars || bars.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="admin-vide">Aucun bar enregistré.</td></tr>';
+      return;
+    }
 
-    // PIN gérant
-    const pinGerant = b.pin_gerant
-      ? `<code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;">${b.pin_gerant}</code>`
-      : '<span style="color:#aaa;">Non défini</span>';
+    tbody.innerHTML = (bars || []).map(b => {
+      const date = new Date(b.created_at).toLocaleDateString('fr-FR');
+      const statutClasse = b.actif ? 'actif' : 'inactif';
+      const statutTxt = b.actif ? 'Actif' : 'Désactivé';
 
-    // Serveuses
-    const serveusesBar = b.serveuses || [];
-    const serveusesHtml = serveusesBar.length === 0
-      ? '<span style="color:#aaa;">Aucune</span>'
-      : serveusesBar.map(s =>
-          `<div style="font-size:12px;">👤 ${escape(s.nom)} — 
-           <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;">${s.code_pin || '—'}</code>
-           </div>`
-        ).join('');
+      const email = b.email || '—';
 
-    return `<tr>
-      <td><strong>${escape(b.nom)}</strong></td>
-      <td style="font-size:13px;color:#555;">${escape(email)}</td>
-      <td>${date}</td>
-      <td>${pinGerant}</td>
-      <td>${serveusesHtml}</td>
-      <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
-      <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
-  style="background:${b.actif ? '#ffebee' : '#e8f5e9'};color:${b.actif ? '#c62828' : '#2e7d32'};border:1px solid ${b.actif ? '#ef9a9a' : '#a5d6a7'};padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;"
-  class="btn-toggle-bar">${b.actif ? '🔴 Désactiver' : '🟢 Activer'}</button></td>
-    </tr>`;
-  }).join('');
+      const pinGerant = b.pin_gerant
+        ? `<code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;">${b.pin_gerant}</code>`
+        : '<span style="color:#aaa;">Non défini</span>';
 
-  tbody.querySelectorAll('.btn-toggle-bar').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const bar_id = btn.getAttribute('data-bar-id');
-      const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
-      btn.disabled = true;
+      const serveusesBar = b.serveuses || [];
+      const serveusesHtml = serveusesBar.length === 0
+        ? '<span style="color:#aaa;">Aucune</span>'
+        : serveusesBar.map(s =>
+            `<div style="font-size:12px;">👤 ${escape(s.nom)} — 
+             <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;">${s.code_pin || '—'}</code>
+             </div>`
+          ).join('');
 
-      const { data: { session } } = await client.auth.getSession();
-      const token = session?.access_token;
+      return `<tr>
+        <td><strong>${escape(b.nom)}</strong></td>
+        <td style="font-size:13px;color:#555;">${escape(email)}</td>
+        <td>${date}</td>
+        <td>${pinGerant}</td>
+        <td>${serveusesHtml}</td>
+        <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
+        <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
+    style="background:${b.actif ? '#ffebee' : '#e8f5e9'};color:${b.actif ? '#c62828' : '#2e7d32'};border:1px solid ${b.actif ? '#ef9a9a' : '#a5d6a7'};padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;"
+    class="btn-toggle-bar">${b.actif ? '🔴 Désactiver' : '🟢 Activer'}</button></td>
+      </tr>`;
+    }).join('');
 
-      const res = await fetch(
-        'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/admin-toggle-bar',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ bar_id, actif: !actifActuel })
+    tbody.querySelectorAll('.btn-toggle-bar').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const bar_id = btn.getAttribute('data-bar-id');
+        const actifActuel = btn.getAttribute('data-bar-actif') === 'true';
+        btn.disabled = true;
+        const texteOriginal = btn.innerText;
+        btn.innerText = '⏳ ...';
+
+        try {
+          const { error } = await client
+            .from('bars')
+            .update({ actif: !actifActuel })
+            .eq('id', bar_id);
+          if (error) throw error;
+          await afficherInterfaceAdmin();
+        } catch (err) {
+          alert('❌ Erreur : ' + err.message);
+          btn.disabled = false;
+          btn.innerText = texteOriginal;
         }
-      );
-      const result = await res.json();
-      btn.disabled = false;
-      if (result.error) { alert('Erreur : ' + result.error); return; }
-      afficherInterfaceAdmin();
+      });
     });
-  });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="admin-vide">❌ Erreur : ${err.message}</td></tr>`;
+  }
 }
 
+// Alias — certains boutons de l'interface appellent ce nom
+async function chargerTableauAdmin() {
+  await afficherInterfaceAdmin();
+}
 
 // CRÉER UN BAR (super admin)
 async function creerBar() {
@@ -289,22 +287,21 @@ async function creerBar() {
   if (btn) { btn.disabled = true; btn.innerText = 'Création...'; }
 
   try {
-    const { data: { session } } = await client.auth.getSession();
-    const token = session?.access_token;
+    const tempClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { data: authData, error: authError } = await tempClient.auth.signUp({ email, password });
+    if (authError) throw authError;
 
-    const res = await fetch(
-      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/admin-inscrire-bar',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ nom, email, password })
-      }
-    );
-    const result = await res.json();
-    if (result.error) throw new Error(result.error);
+    const userId = authData.user?.id || authData.session?.user?.id;
+    if (!userId) throw new Error('Impossible de récupérer l\'UUID du nouveau compte. Désactive la confirmation email dans Supabase.');
+
+    const { data: barId, error: rpcError } = await client.rpc('creer_bar_complet', {
+      p_nom: nom,
+      p_email: email,
+      p_owner_id: authData.user.id
+    });
+    if (rpcError) throw rpcError;
 
     document.getElementById('new-bar-nom').value = '';
     document.getElementById('new-bar-email').value = '';
@@ -622,9 +619,9 @@ function afficherEtatProduits() {
   if (fil.length===0) { tbody.innerHTML='<tr><td colspan="7" class="vide">Aucun produit</td></tr>'; return; }
   tbody.innerHTML = fil.map(b => {
     const seuil = b.seuil||6; let rs='', st='';
-    if (b.stock===0) { rs='class="row-rupture;"'; st='<span class="tag tag-rouge">🔴 RUPTURE</span>'; }
-    else if (b.stock<=seuil) { rs='class="row-alerte;"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
-    else { rs='class="row-ok;"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
+    if (b.stock===0) { rs='class="row-rupture"'; st='<span class="tag tag-rouge">🔴 RUPTURE</span>'; }
+    else if (b.stock<=seuil) { rs='class="row-alerte"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
+    else { rs='class="row-ok"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
     return `<tr ${rs}><td><strong>${b.designation}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
   }).join('');
   rafraichirIcones();
@@ -638,14 +635,14 @@ function changerModeStockage(mode) {
   const titre = document.getElementById('stockage-titre'), desc = document.getElementById('stockage-description');
   const thP = document.getElementById('th-dynamique-prix'), thA = document.getElementById('th-dynamique-action');
   if (mode==='appro') {
-    if(bA){bA.style.background='#e8f5e9';bA.style.color='#2e7d32';bA.style.border='none';}
-    if(bR){bR.style.background='#fff';bR.style.color='#555';bR.style.border='1px solid #ccc';}
+    if(bA){bA.classList.add('stockage-mode-active');bA.classList.remove('stockage-mode-inactive');}
+    if(bR){bR.classList.add('stockage-mode-inactive');bR.classList.remove('stockage-mode-active');}
     if(titre) titre.innerHTML="📦 Approvisionnement fournisseur";
     if(desc) desc.innerHTML="💡 Prix calculé sur le <strong>prix du cassier</strong>.";
     if(thP) thP.innerHTML="Prix Cassier"; if(thA) thA.innerHTML="Ajouter Stock";
   } else {
-    if(bA){bA.style.background='#fff';bA.style.color='#555';bA.style.border='1px solid #ccc';}
-    if(bR){bR.style.background='#e1f5fe';bR.style.color='#0288d1';bR.style.border='none';}
+    if(bA){bA.classList.add('stockage-mode-inactive');bA.classList.remove('stockage-mode-active');}
+    if(bR){bR.classList.add('stockage-mode-active');bR.classList.remove('stockage-mode-inactive');}
     if(titre) titre.innerHTML="🔄 Retour client / Pertes bouteilles";
     if(desc) desc.innerHTML="💡 Retours clients ou pertes/casses. Ajustements à l'unité.";
     if(thP) thP.innerHTML="Prix Vente Unit."; if(thA) thA.innerHTML="Ajustements";
@@ -671,17 +668,17 @@ function afficherStockage() {
     const lbl = b.type_bouteille==="petit bouteille"?"Petit":"Grand";
     let cp='', ca='';
     if (modeStockage==='appro') {
-      cp=`1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br><span style="color:#555;">½ Cas. : ${formatPrix(b.demi_cassier||Math.round(b.pu_initial/2))}</span>${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br><span style="color:#0288d1;">¼ Cas. : ${formatPrix(b.quart_cassier)}</span>`:''}`;
-      ca=`<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:20px;" onclick="entreeStock(${b.id},'cassier')">📦 +1 cas.</button><button class="btn btn-sm" style="background:#fff3e0;color:#e65100;border:1px solid #ffcc80;border-radius:20px;" onclick="entreeStock(${b.id},'demi')">📦 +½ cas.</button>${b.type_bouteille==="petit bouteille"?`<button class="btn btn-sm" style="background:#e1f5fe;color:#0288d1;border:1px solid #b3e5fc;border-radius:20px;" onclick="entreeStock(${b.id},'quart')">🧪 +¼ cas.</button>`:''}</div>`;
+      cp=`1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br><span class="txt-secondaire">½ Cas. : ${formatPrix(b.demi_cassier||Math.round(b.pu_initial/2))}</span>${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br><span style="color:#0288d1;">¼ Cas. : ${formatPrix(b.quart_cassier)}</span>`:''}`;
+      ca=`<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm pill-vert" onclick="entreeStock(${b.id},'cassier')">📦 +1 cas.</button><button class="btn btn-sm pill-orange" onclick="entreeStock(${b.id},'demi')">📦 +½ cas.</button>${b.type_bouteille==="petit bouteille"?`<button class="btn btn-sm pill-bleu" onclick="entreeStock(${b.id},'quart')">🧪 +¼ cas.</button>`:''}</div>`;
     } else {
       cp=`<strong>${formatPrix(b.prix_unitaire||0)}</strong> / btl`;
-      ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm" style="background:#e1f5fe;color:#0288d1;border:1px solid #b3e5fc;border-radius:20px;" onclick="ajusterRetour(${b.id},1)">🔄 +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">⚠️ -1 Perte</button></div>`;
+      ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm pill-bleu" onclick="ajusterRetour(${b.id},1)">🔄 +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">⚠️ -1 Perte</button></div>`;
     }
-    return `<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:14px 10px;font-weight:bold;">${escape(b.designation)}</td><td style="padding:14px 10px;"><span class="tag-type">${lbl}</span></td><td style="padding:14px 10px;text-align:center;"><span style="display:inline-block;padding:6px 12px;border:1px solid #e0e0e0;border-radius:20px;font-weight:bold;">${b.stock}</span></td><td style="padding:14px 10px;font-size:13px;">${cp}</td><td style="padding:14px 10px;">${ca}</td></tr>`;
+    return `<tr class="ligne-stockage"><td class="cell-stockage-nom">${escape(b.designation)}</td><td class="cell-stockage"><span class="tag-type">${lbl}</span></td><td class="cell-stockage" style="text-align:center;"><span class="badge-stock">${b.stock}</span></td><td class="cell-stockage" style="font-size:13px;">${cp}</td><td class="cell-stockage">${ca}</td></tr>`;
   };
   let html='';
-  if (grands.length>0) html+=`<tr style="background:#f8fafc;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #475569;">👑 GRANDS MODÈLES</td></tr>`+grands.map(gen).join('');
-  if (petits.length>0) html+=`<tr style="background:#f0f9ff;font-weight:bold;"><td colspan="5" style="padding:12px;border-left:4px solid #0288d1;">🧪 PETITS MODÈLES</td></tr>`+petits.map(gen).join('');
+  if (grands.length>0) html+=`<tr class="stockage-groupe stockage-groupe-grand"><td colspan="5">👑 GRANDS MODÈLES</td></tr>`+grands.map(gen).join('');
+  if (petits.length>0) html+=`<tr class="stockage-groupe stockage-groupe-petit"><td colspan="5">🧪 PETITS MODÈLES</td></tr>`+petits.map(gen).join('');
   tbody.innerHTML=html;
   rafraichirIcones();
 }
@@ -919,13 +916,13 @@ function afficherHistorique() {
     const num = historique.length - historique.indexOf(v);
     let det = v.articles&&v.articles.length>0 ? v.articles.map(a=>`${a.nom||'?'} ×${a.qte}`).join(', ') : '—';
     const dU = det.toUpperCase();
-    let badge='💰 VENTE', coul='';
-    if (dU.includes('PAIEMENT FOURNISSEUR')) { badge='💳 ACHAT FOURN.'; coul='background:#fff5f5;'; }
-    else if (dU.includes('RETOUR CLIENT')) { badge='🔄 RETOUR'; coul='background:#e1f5fe;'; }
-    else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='⚠️ PERTE'; coul='background:#fff3e0;'; }
+    let badge='💰 VENTE', ligneClasse='';
+    if (dU.includes('PAIEMENT FOURNISSEUR')) { badge='💳 ACHAT FOURN.'; ligneClasse='ligne-fournisseur'; }
+    else if (dU.includes('RETOUR CLIENT')) { badge='🔄 RETOUR'; ligneClasse='ligne-retour'; }
+    else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='⚠️ PERTE'; ligneClasse='ligne-perte'; }
     const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
-    return `<tr style="${coul}border-bottom:1px solid #eee;">
-      <td style="padding:10px;font-size:13px;"><div style="font-weight:bold;">#${num} <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">${badge}</span></div><div style="margin-top:3px;color:#777;">⏱️ ${v.date}</div></td>
+    return `<tr class="${ligneClasse}">
+      <td style="padding:10px;font-size:13px;"><div style="font-weight:bold;">#${num} <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">${badge}</span></div><div style="margin-top:3px;" class="txt-secondaire">⏱️ ${v.date}</div></td>
       <td style="padding:10px;font-size:13px;">${escape(det)}</td>
       <td style="padding:10px;font-weight:bold;">${formatPrix(Math.abs(total))}</td>
       <td style="padding:10px;font-weight:bold;color:${total<0?'#c62828':'#2e7d32'};">${formatPrix(Math.abs(total))}</td>
@@ -950,12 +947,20 @@ function dessinerGraphique() {
     dB.push(vj.reduce((s,v)=>s+(parseInt(v.benef)||0),0));
   }
   if (graphiqueInstance) graphiqueInstance.destroy();
+  const estSombre = document.body.classList.contains('dark');
   graphiqueInstance = new Chart(canvas, {
     type:'bar', data:{ labels, datasets:[
       { label:'CA (FCFA)', data:dCA, backgroundColor:'rgba(46,125,50,0.7)', borderRadius:6 },
       { label:'Bénéfice (FCFA)', data:dB, backgroundColor:'rgba(2,136,209,0.6)', borderRadius:6 }
     ]},
-    options:{ responsive:true, plugins:{ legend:{ position:'top' }}, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>formatPrix(v) }}}}
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:'top', labels:{ color: estSombre ? '#e0e0e0' : '#333' } } },
+      scales:{
+        y:{ beginAtZero:true, ticks:{ callback:v=>formatPrix(v), color: estSombre ? '#cfd8dc' : '#555' }, grid:{ color: estSombre ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' } },
+        x:{ ticks:{ color: estSombre ? '#cfd8dc' : '#555' }, grid:{ color: estSombre ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' } }
+      }
+    }
   });
 }
 
@@ -1030,9 +1035,9 @@ async function chargerEspaceFournisseur() {
       tbL.innerHTML = '<tr><td colspan="3" class="vide">Aucune livraison enregistrée.</td></tr>';
     } else {
       tbL.innerHTML = livraisons.map(h => `
-        <tr style="border-bottom:1px solid #eee;">
+        <tr>
           <td style="padding:10px;">${h.created_at ? new Date(h.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-'}</td>
-          <td style="padding:10px;color:#555;">${h.commentaire||'-'}</td>
+          <td style="padding:10px;" class="txt-secondaire">${h.commentaire||'-'}</td>
           <td style="padding:10px;font-weight:bold;color:#2e7d32;">${formatPrix(h.montant)}</td>
         </tr>`).join('');
     }
@@ -1098,7 +1103,7 @@ async function modifierPrixTotalFournisseurStockage() {
     const btnAnn = modal?.querySelector('.modal-btns .btn-danger');
     if (titre) titre.innerHTML = '✏️ Modifier le montant fournisseur';
     if (contenu) contenu.innerHTML = `
-      <div style="margin-bottom:12px;font-size:14px;color:#555;">Montant actuel : <strong>${formatPrix(actuel)}</strong></div>
+      <div style="margin-bottom:12px;font-size:14px;" class="txt-secondaire">Montant actuel : <strong>${formatPrix(actuel)}</strong></div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <label style="font-size:13px;font-weight:600;">Nouveau montant (FCFA)</label>
         <input type="number" id="input-nouveau-montant" value="${actuel}" min="0" style="padding:10px;border:2px solid #ddd;border-radius:8px;font-size:16px;width:100%;">
@@ -1197,12 +1202,12 @@ function afficherCommandes() {
     const duree = dureeDepuis(cmd.created_at);
     const detail = articles.length > 0 ? articles.map(a => `${a.designation} x${a.qte}`).join(', ') : 'Aucun article';
     const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
-    return `<div style="border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;">
+    return `<div class="carte-commande">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div><span style="font-weight:700;font-size:15px;">${label}</span><span style="margin-left:10px;font-size:12px;color:#888;">⏱️ ${duree}</span></div>
+        <div><span style="font-weight:700;font-size:15px;">${label}</span><span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
         <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
       </div>
-      <div style="font-size:13px;color:#555;margin-bottom:10px;">${detail}</div>
+      <div style="font-size:13px;margin-bottom:10px;" class="txt-secondaire">${detail}</div>
       ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${cmd.note}</div>` : ''}
       <div style="display:flex;gap:8px;">
         <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">✏️ Modifier</button>
@@ -1238,7 +1243,7 @@ function afficherArticlesCommande() {
   const articles = commandeActive.articles || [];
   if (articles.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;margin-bottom:8px;">Aucun article ajouté</div>'; return; }
   const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-  div.innerHTML = `<div style="background:#f9f9f9;border-radius:6px;padding:10px;margin-bottom:10px;">${articles.map((a, i) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:13px;">${a.designation} × ${a.qte}</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span><button onclick="retirerArticleCommande(${i})" style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button></div></div>`).join('')}<div style="border-top:1px solid #ddd;margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;"><span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span></div></div>`;
+  div.innerHTML = `<div class="bloc-articles-commande">${articles.map((a, i) => `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:13px;">${a.designation} × ${a.qte}</span><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:600;">${formatPrix(a.prix * a.qte)}</span><button onclick="retirerArticleCommande(${i})" style="background:#c62828;color:white;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:12px;">✖</button></div></div>`).join('')}<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;display:flex;justify-content:space-between;"><span>Total</span><span style="color:#1a6b3a;">${formatPrix(total)}</span></div></div>`;
 }
 
 function filtrerBoissonsCommande() { const q = document.getElementById('modal-cmd-search')?.value || ''; afficherBoissonsCommande(q); }
@@ -1248,7 +1253,7 @@ function afficherBoissonsCommande(recherche) {
   const terme = recherche.toLowerCase();
   const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme));
   if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
-  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:6px;padding:8px;text-align:left;cursor:pointer;font-size:12px;"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
+  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
 function ajouterArticleCommande(id) {
@@ -1339,7 +1344,7 @@ function ouvrirModalEnvoyerTable() {
     div.innerHTML = commandesOuvertes.map(cmd => {
       const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
       const nb = (cmd.articles || []).reduce((s, a) => s + a.qte, 0);
-      return `<button onclick="envoyerPanierVersTable(${cmd.id})" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:14px;"><strong>${label}</strong><span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span></button>`;
+      return `<button onclick="envoyerPanierVersTable(${cmd.id})" class="btn-choix-table"><strong>${label}</strong><span style="float:right;color:#888;font-size:12px;">${nb} article(s) — ${formatPrix(cmd.total)}</span></button>`;
     }).join('');
   }
   document.getElementById('modal-choisir-table').classList.add('visible');
@@ -1421,7 +1426,7 @@ async function afficherChoixServeuse() {
     div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
     return;
   }
-  div.innerHTML = serveuses.map(s => `<button onclick="selectionnerServeuse(${s.id}, '${s.nom}')" style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:12px;text-align:left;cursor:pointer;font-size:15px;font-weight:600;">👤 ${s.nom}</button>`).join('');
+  div.innerHTML = serveuses.map(s => `<button onclick="selectionnerServeuse(${s.id}, '${s.nom}')" class="btn-choix-serveuse">👤 ${s.nom}</button>`).join('');
 }
 
 let serveuseSelectionnee = null;
@@ -1486,7 +1491,7 @@ async function chargerListeServeuses() {
   const { data } = await client.from('serveuses').select('*').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
   if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
-  div.innerHTML = data.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
+  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
 }
 
 async function chargerRapportServeuses() {
@@ -1522,21 +1527,21 @@ async function chargerRapportServeuses() {
   if (liste.length === 0) { contenu.innerHTML = '<div style="text-align:center;color:#aaa;padding:30px;">Aucune vente sur cette période.</div>'; return; }
   contenu.innerHTML = liste.map(g => {
     const nbVentes = g.ventes.filter(v => { const d=(v.vente_articles||[]).map(a=>a.boisson_designation||'').join(' ').toUpperCase(); return !d.includes('RETOUR')&&!d.includes('PERTE')&&!d.includes('FOURNISSEUR'); }).length;
-    return `<div style="border:1px solid #ddd;border-radius:10px;margin-bottom:16px;overflow:hidden;">
-      <div style="background:#0f3d22;color:white;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
+    return `<div class="carte-serveuse">
+      <div class="carte-serveuse-entete">
         <span style="font-weight:700;font-size:15px;">👤 ${escape(g.nom)}</span>
         <span style="font-size:13px;opacity:0.8;">${nbVentes} vente(s)</span>
       </div>
-      <div style="display:flex;gap:0;border-bottom:1px solid #eee;">
-        <div style="flex:1;padding:12px;text-align:center;border-right:1px solid #eee;"><div style="font-size:11px;color:#888;text-transform:uppercase;">CA</div><div style="font-weight:700;color:#1a6b3a;">${formatPrix(g.total)}</div></div>
-        <div style="flex:1;padding:12px;text-align:center;"><div style="font-size:11px;color:#888;text-transform:uppercase;">Bénéfice</div><div style="font-weight:700;color:#d4a017;">${formatPrix(g.benef)}</div></div>
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;padding:12px;text-align:center;border-right:1px solid var(--border);"><div style="font-size:11px;text-transform:uppercase;" class="txt-secondaire">CA</div><div style="font-weight:700;color:#1a6b3a;">${formatPrix(g.total)}</div></div>
+        <div style="flex:1;padding:12px;text-align:center;"><div style="font-size:11px;text-transform:uppercase;" class="txt-secondaire">Bénéfice</div><div style="font-weight:700;color:#d4a017;">${formatPrix(g.benef)}</div></div>
       </div>
       <div style="padding:12px;">
-        <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">DERNIÈRES VENTES</div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;" class="txt-secondaire">DERNIÈRES VENTES</div>
         ${g.ventes.slice(0, 5).map(v => {
           const articles = (v.vente_articles||[]).map(a => `${a.boisson_designation} ×${a.quantite}`).join(', ');
           const date = new Date(v.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:13px;"><span style="color:#555;">${date} — ${articles || '—'}</span><span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span></div>`;
+          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;"><span class="txt-secondaire">${date} — ${articles || '—'}</span><span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span></div>`;
         }).join('')}
         ${g.ventes.length > 5 ? `<div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">+ ${g.ventes.length - 5} autre(s)</div>` : ''}
       </div>
@@ -1560,30 +1565,18 @@ function changerUtilisateur() {
 // ==================== PROFIL BAR ====================
 
 async function chargerProfilBar() {
-  // Pré-remplir le nom actuel
   const nomInput = document.getElementById('profil-nom');
   if (nomInput) nomInput.placeholder = barActuel.nom;
 
-  // Pré-remplir email actuel
-  const { data: userData } = await client.auth.getUser();
-  const emailInput = document.getElementById('profil-email');
-  if (emailInput && userData?.user?.email) {
-    emailInput.placeholder = userData.user.email;
-  }
-
-  // Masquer le message
   const msg = document.getElementById('profil-message');
   if (msg) msg.style.display = 'none';
 }
-
 function afficherMessageProfil(texte, succes = true) {
   const msg = document.getElementById('profil-message');
   if (!msg) return;
   msg.innerText = texte;
   msg.style.display = 'block';
-  msg.style.background = succes ? '#e8f5e9' : '#fff5f5';
-  msg.style.color = succes ? '#1a6b3a' : '#c62828';
-  msg.style.border = succes ? '1px solid #a5d6a7' : '1px solid #ffcdd2';
+  msg.className = succes ? 'profil-msg-succes' : 'profil-msg-erreur';
   setTimeout(() => { msg.style.display = 'none'; }, 4000);
 }
 
@@ -1597,7 +1590,6 @@ async function changerNomBar() {
     if (error) throw error;
     barActuel.nom = nom;
     localStorage.setItem('barstock_bar_nom', nom);
-    // Mettre à jour l'en-tête
     const nomEl = document.getElementById('nom-bar-actuel');
     if (nomEl) nomEl.innerText = `BarStock - ${nom} (${utilisateurActuel.nom})`;
     document.getElementById('profil-nom').value = '';
@@ -1608,40 +1600,12 @@ async function changerNomBar() {
   }
 }
 
-async function changerEmail() {
-  const email = (document.getElementById('profil-email')?.value || '').trim();
-  if (!email) { afficherMessageProfil('Entrez un nouvel email.', false); return; }
-
-  try {
-    const { error } = await client.auth.updateUser({ email });
-    if (error) throw error;
-
-    // Mettre à jour aussi dans la table bars
-    await client.from('bars').update({ email }).eq('id', barActuel.id);
-
-    afficherMessageProfil('✅ Email mis à jour ! Reconnexion dans 3 secondes...');
-    setTimeout(async () => {
-      await client.auth.signOut();
-      barActuel = null; utilisateurActuel = null;
-      localStorage.removeItem('barstock_bar_id');
-      localStorage.removeItem('barstock_bar_nom');
-      localStorage.removeItem('barstock_expiration');
-      // Pré-remplir le nouvel email dans l'écran de connexion
-      const connEmail = document.getElementById('conn-email');
-      if (connEmail) connEmail.value = email;
-      afficherEcranAuth();
-    }, 3000);
-  } catch (err) {
-    afficherMessageProfil('❌ Erreur : ' + err.message, false);
-  }
-}
-
 async function changerMotDePasse() {
   const password = (document.getElementById('profil-password')?.value || '').trim();
-  const confirm = (document.getElementById('profil-password-confirm')?.value || '').trim();
+  const confirmPassword = (document.getElementById('profil-password-confirm')?.value || '').trim();
 
   if (!password || password.length < 6) { afficherMessageProfil('Le mot de passe doit avoir au moins 6 caractères.', false); return; }
-  if (password !== confirm) { afficherMessageProfil('Les mots de passe ne correspondent pas.', false); return; }
+  if (password !== confirmPassword) { afficherMessageProfil('Les mots de passe ne correspondent pas.', false); return; }
 
   if (!confirm(`Changer le mot de passe ? Vous serez déconnecté et devrez vous reconnecter avec le nouveau mot de passe.`)) return;
 
@@ -1676,4 +1640,14 @@ async function changerPinGerant() {
   } catch (err) {
     afficherMessageProfil('❌ Erreur : ' + err.message, false);
   }
+}
+async function changerMotDePasseAdmin() {
+  const nouveau = prompt('Nouveau mot de passe (min. 8 caractères) :');
+  if (!nouveau || nouveau.length < 8) { alert('Mot de passe trop court.'); return; }
+  const confirm = prompt('Confirmer le mot de passe :');
+  if (nouveau !== confirm) { alert('Les mots de passe ne correspondent pas.'); return; }
+
+  const { error } = await client.auth.updateUser({ password: nouveau });
+  if (error) { alert('Erreur : ' + error.message); return; }
+  alert('✅ Mot de passe mis à jour !');
 }

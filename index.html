@@ -48,6 +48,10 @@
         <div style="font-size:22px; font-weight:800;">🛡️ Super Administration</div>
         <div style="opacity:0.7; font-size:13px; margin-top:2px;">BarStock — Gestion globale des bars</div>
       </div>
+      <button onclick="changerMotDePasseAdmin()"
+  style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
+  🔒 Changer mot de passe
+</button>
       <button onclick="seDeconnecterAdmin()"
         style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
         🚪 Déconnexion
@@ -85,7 +89,7 @@
     <div style="background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
-        <button onclick="afficherInterfaceAdmin()"
+        <button onclick="chargerTableauAdmin()"
           style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
           🔄 Actualiser
         </button>
@@ -170,19 +174,11 @@
     <header>
       <span id="nom-bar-actuel">🍺BarStock</span>
       <div class="header-right">
-        
-        <button class="btn" onclick="changerUtilisateur()" style="background:rgba(255,255,255,0.15); font-size:13px;">
-          Changer
-        </button>
-        <button class="btn-dark-toggle" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
-        <button class="nav-btn gerant-only" data-section="profil" onclick="showSection('profil')">⚙️ Profil</button>
-        <button onclick="seDeconnecter()"
-          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:6px 12px; border-radius:20px; cursor:pointer; font-size:13px;">
-          Déconnexion
-        </button>
+        <button class="hdr-btn" onclick="changerUtilisateur()">👤 Changer</button>
+        <button class="hdr-btn" onclick="toggleDarkMode()" id="btn-dark">🌙 Mode sombre</button>
+        <button class="hdr-btn gerant-only" data-section="profil" onclick="showSection('profil')">⚙️ Profil</button>
+        <button class="hdr-btn hdr-btn-danger" onclick="seDeconnecter()">🚪 Déconnexion</button>
       </div>
-      
-    
     </header>
 
     <!-- Stats du jour -->
@@ -205,7 +201,6 @@
       <button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
       <button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">📊 Serveuses</button>
       <button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
-      
     </nav>
   </div>
 
@@ -297,8 +292,8 @@
     <div id="stockage-recup" class="section">
       <div class="card">
         <div style="display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap;">
-          <button id="btn-mode-appro" onclick="changerModeStockage('appro')" style="border:none; padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">📦 Approvisionnement fournisseur</button>
-          <button id="btn-mode-retour" onclick="changerModeStockage('retour')" style="border:none; padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">🔄 Retour client / Pertes</button>
+          <button id="btn-mode-appro" onclick="changerModeStockage('appro')" class="stockage-mode-active" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">📦 Approvisionnement fournisseur</button>
+          <button id="btn-mode-retour" onclick="changerModeStockage('retour')" class="stockage-mode-inactive" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">🔄 Retour client / Pertes</button>
         </div>
         <h3 id="stockage-titre" style="margin-top:0;">📦 Approvisionnement fournisseur</h3>
         <p id="stockage-description" style="font-size:13px; color:#888; margin-bottom:16px;">💡 Gestion des stocks.</p>
@@ -540,7 +535,6 @@
       </div>
     </div>
 
-
     <!-- ===== PROFIL BAR ===== -->
     <div id="profil" class="section">
       <div class="card" style="max-width:600px; margin:0 auto;">
@@ -556,22 +550,6 @@
                 style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
             </div>
             <button onclick="changerNomBar()"
-              style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
-              💾 Enregistrer
-            </button>
-          </div>
-        </div>
-
-        <!-- Email -->
-        <div style="margin-bottom:24px;">
-          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">📧 Adresse email</h4>
-          <div style="display:flex; gap:10px; align-items:flex-end;">
-            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
-              <label style="font-size:13px; font-weight:600; color:#555;">Nouvel email</label>
-              <input type="email" id="profil-email" placeholder="Email actuel"
-                style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
-            </div>
-            <button onclick="changerEmail()"
               style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
               💾 Enregistrer
             </button>
