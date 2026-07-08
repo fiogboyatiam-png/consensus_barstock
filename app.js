@@ -1259,7 +1259,6 @@ function afficherBoissonsCommande(recherche) {
 
 // ==================== COMMANDES (CORRIGÉ) ====================
 
-let ajoutEnCours = false;
 
 async function ajouterArticleCommande(id) {
   if (!commandeActive || ajoutEnCours) return;
