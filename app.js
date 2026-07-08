@@ -237,7 +237,7 @@ async function afficherInterfaceAdmin() {
         <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
         <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
     style="background:${b.actif ? '#ffebee' : '#e8f5e9'};color:${b.actif ? '#c62828' : '#2e7d32'};border:1px solid ${b.actif ? '#ef9a9a' : '#a5d6a7'};padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;"
-    class="btn-toggle-bar">${b.actif ? '🔴 Désactiver' : '🟢 Activer'}</button></td>
+    class="btn-toggle-bar">${b.actif ? '◍ Désactiver' : '🟢 Activer'}</button></td>
       </tr>`;
     }).join('');
 
@@ -378,7 +378,7 @@ async function initialiserApplication() {
         try {
           const a = typeof v.articles === 'string' ? JSON.parse(v.articles) : v.articles;
           if (Array.isArray(a)) arts = a.map(x => ({ nom: x.designation || x.nom, qte: x.qte || x.quantite }));
-        } catch { arts = [{ nom: "📦 PAIEMENT FOURNISSEUR", qte: 1 }]; }
+        } catch { arts = [{ nom: "⨝ PAIEMENT FOURNISSEUR", qte: 1 }]; }
       }
       return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts };
     });
@@ -468,8 +468,8 @@ function afficherCatalogue() {
   tbody.innerHTML = fil.map(b => {
     const st = b.stock === 0 ? '<span class="tag tag-rouge">Épuisé</span>'
       : (b.stock <= b.seuil ? '<span class="tag tag-orange">Seuil Alerte</span>' : '<span class="tag tag-vert">Stock OK</span>');
-    const prix = `<div style="font-size:13px;">📦 1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br>🥛 ½ Cas. : ${formatPrix(b.demi_cassier || Math.round(b.pu_initial/2))}${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br>🧪 ¼ Cas. : ${formatPrix(b.quart_cassier)}`:''}</div>`;
-    return `<tr><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">🗑️</button></td></tr>`;
+    const prix = `<div style="font-size:13px;">⨝ 1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br>🥛 ½ Cas. : ${formatPrix(b.demi_cassier || Math.round(b.pu_initial/2))}${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br>🧪 ¼ Cas. : ${formatPrix(b.quart_cassier)}`:''}</div>`;
+    return `<tr><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">⋯ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">⨆</button></td></tr>`;
   }).join('');
   rafraichirIcones();
 }
@@ -539,7 +539,7 @@ async function supprimerBoisson(id) {
       .update({ supprime: true, supprime_le: dateStr() })
       .eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
-    toast('🗑️ Boisson mise à la corbeille');
+    toast('⨆ Boisson mise à la corbeille');
     await initialiserApplication();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
@@ -550,7 +550,7 @@ async function chargerCorbeille() {
     .order('supprime_le', { ascending: false });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   const tbody = document.getElementById('corbeille-rows'); if (!tbody) return;
-  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vide">🗑️ Corbeille vide</td></tr>'; return; }
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vide">⨆ Corbeille vide</td></tr>'; return; }
   tbody.innerHTML = data.map(b => `
     <tr>
       <td><strong>${escape(b.designation)}</strong></td>
@@ -559,7 +559,7 @@ async function chargerCorbeille() {
       <td style="color:#888;font-size:13px;">🕐 ${escape(b.supprime_le || '-')}</td>
       <td>
         <button class="btn btn-sm" onclick="restaurerBoisson(${b.id})">♻️ Restaurer</button>
-        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})">🗑️ Supprimer</button>
+        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})">⨆ Supprimer</button>
       </td>
     </tr>`).join('');
 }
@@ -575,21 +575,21 @@ async function restaurerBoisson(id) {
 }
 
 async function supprimerDefinitivement(id) {
-  if (!confirm("⚠️ Supprimer définitivement ? Cette action est IRRÉVERSIBLE.")) return;
-  if (!confirm("🔴 Dernière confirmation — continuer ?")) return;
+  if (!confirm("△ Supprimer définitivement ? Cette action est IRRÉVERSIBLE.")) return;
+  if (!confirm("◍ Dernière confirmation — continuer ?")) return;
   try {
     const { error } = await client.from('boissons').delete().eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
-    toast('🗑️ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
+    toast('⨆ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function viderCorbeille() {
-  if (!confirm("⚠️ Vider toute la corbeille définitivement ?")) return;
+  if (!confirm("△  Vider toute la corbeille définitivement ?")) return;
   try {
     const { error } = await client.from('boissons').delete().eq('bar_id', barActuel.id).eq('supprime', true);
     if (error) throw error;
-    toast('🗑️ Corbeille vidée', 'warning'); chargerCorbeille();
+    toast('⨆ Corbeille vidée', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
@@ -619,10 +619,10 @@ function afficherEtatProduits() {
   if (fil.length===0) { tbody.innerHTML='<tr><td colspan="7" class="vide">Aucun produit</td></tr>'; return; }
   tbody.innerHTML = fil.map(b => {
     const seuil = b.seuil||6; let rs='', st='';
-    if (b.stock===0) { rs='class="row-rupture"'; st='<span class="tag tag-rouge">🔴 RUPTURE</span>'; }
+    if (b.stock===0) { rs='class="row-rupture"'; st='<span class="tag tag-rouge">◍ RUPTURE</span>'; }
     else if (b.stock<=seuil) { rs='class="row-alerte"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
     else { rs='class="row-ok"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
-    return `<tr ${rs}><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
+    return `<tr ${rs}><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">⨝ Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
   }).join('');
   rafraichirIcones();
 }
@@ -637,13 +637,13 @@ function changerModeStockage(mode) {
   if (mode==='appro') {
     if(bA){bA.classList.add('stockage-mode-active');bA.classList.remove('stockage-mode-inactive');}
     if(bR){bR.classList.add('stockage-mode-inactive');bR.classList.remove('stockage-mode-active');}
-    if(titre) titre.innerHTML="📦 Approvisionnement fournisseur";
+    if(titre) titre.innerHTML="⨝ Approvisionnement fournisseur";
     if(desc) desc.innerHTML="💡 Prix calculé sur le <strong>prix du cassier</strong>.";
     if(thP) thP.innerHTML="Prix Cassier"; if(thA) thA.innerHTML="Ajouter Stock";
   } else {
     if(bA){bA.classList.add('stockage-mode-inactive');bA.classList.remove('stockage-mode-active');}
     if(bR){bR.classList.add('stockage-mode-active');bR.classList.remove('stockage-mode-inactive');}
-    if(titre) titre.innerHTML="🔄 Retour client / Pertes bouteilles";
+    if(titre) titre.innerHTML="↺ Retour client / Pertes bouteilles";
     if(desc) desc.innerHTML="💡 Retours clients ou pertes/casses. Ajustements à l'unité.";
     if(thP) thP.innerHTML="Prix Vente Unit."; if(thA) thA.innerHTML="Ajustements";
   }
@@ -669,10 +669,10 @@ function afficherStockage() {
     let cp='', ca='';
     if (modeStockage==='appro') {
       cp=`1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br><span class="txt-secondaire">½ Cas. : ${formatPrix(b.demi_cassier||Math.round(b.pu_initial/2))}</span>${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br><span style="color:#0288d1;">¼ Cas. : ${formatPrix(b.quart_cassier)}</span>`:''}`;
-      ca=`<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm pill-vert" onclick="entreeStock(${b.id},'cassier')">📦 +1 cas.</button><button class="btn btn-sm pill-orange" onclick="entreeStock(${b.id},'demi')">📦 +½ cas.</button>${b.type_bouteille==="petit bouteille"?`<button class="btn btn-sm pill-bleu" onclick="entreeStock(${b.id},'quart')">🧪 +¼ cas.</button>`:''}</div>`;
+      ca=`<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm pill-vert" onclick="entreeStock(${b.id},'cassier')">⨝ +1 cas.</button><button class="btn btn-sm pill-orange" onclick="entreeStock(${b.id},'demi')">⨝ +½ cas.</button>${b.type_bouteille==="petit bouteille"?`<button class="btn btn-sm pill-bleu" onclick="entreeStock(${b.id},'quart')">🧪 +¼ cas.</button>`:''}</div>`;
     } else {
       cp=`<strong>${formatPrix(b.prix_unitaire||0)}</strong> / btl`;
-      ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm pill-bleu" onclick="ajusterRetour(${b.id},1)">🔄 +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">⚠️ -1 Perte</button></div>`;
+      ca=`<div style="display:flex;gap:8px;"><button class="btn btn-sm pill-bleu" onclick="ajusterRetour(${b.id},1)">↺ +1 Retour</button><button class="btn btn-danger btn-sm" style="border-radius:20px;" onclick="ajusterRetour(${b.id},-1)">△  -1 Perte</button></div>`;
     }
     return `<tr class="ligne-stockage"><td class="cell-stockage-nom">${escape(b.designation)}</td><td class="cell-stockage"><span class="tag-type">${lbl}</span></td><td class="cell-stockage" style="text-align:center;"><span class="badge-stock">${b.stock}</span></td><td class="cell-stockage" style="font-size:13px;">${cp}</td><td class="cell-stockage">${ca}</td></tr>`;
   };
@@ -710,7 +710,7 @@ async function ajusterRetour(id, delta) {
   const qpc = b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
   const pAchat = b.pu_initial>0?Math.round(b.pu_initial/qpc):0;
   if (delta<0&&pAchat===0) { alert(`❌ Prix d'achat non configuré pour ${escape(b.designation)}.`); return; }
-  const typeOp = delta>0?`🔄 RETOUR CLIENT : ${escape(b.designation)}`:`⚠️ PERTE/CASSE : ${escape(b.designation)}`;
+  const typeOp = delta>0?`↺ RETOUR CLIENT : ${escape(b.designation)}`:`△  PERTE/CASSE : ${escape(b.designation)}`;
   const tImpact = delta>0?-(b.prix_unitaire):0;
   const bImpact = delta>0?-(b.prix_unitaire-pAchat):-pAchat;
   const msg = delta>0?`Retour client : ${escape(b.designation)}. Stock +1, vente déduite (${formatPrix(b.prix_unitaire)}).`:`Perte/casse : ${escape(b.designation)}. Stock -1, perte ${formatPrix(pAchat)}.`;
@@ -719,7 +719,7 @@ async function ajusterRetour(id, delta) {
     const { error: eS } = await client.from('boissons').update({ stock: b.stock+delta }).eq('id', id); if (eS) throw eS;
     const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note:''}]).select().single(); if (eH) throw eH;
     await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:typeOp, quantite:1, prix_unitaire:tImpact }]);
-    toast(delta>0?'🔄 Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
+    toast(delta>0?'↺ Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
     await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
@@ -733,7 +733,7 @@ function afficherVentes() {
   if (dispo.length===0) { div.innerHTML='<p class="vide">Aucun produit disponible.</p>'; mettreAJourTicket(); return; }
   div.innerHTML = dispo.map(b => {
     const qte = panier[b.id]||0;
-    const affP = b.prix_unitaire>0?`<strong>${formatPrix(b.prix_unitaire)}</strong>`:`<span style="color:#ef6c00;">À définir <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️</button></span>`;
+    const affP = b.prix_unitaire>0?`<strong>${formatPrix(b.prix_unitaire)}</strong>`:`<span style="color:#ef6c00;">À définir <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">⋯</button></span>`;
     return `<div class="produit-vente-card"><div class="produit-vente-infos"><div class="produit-vente-nom">${escape(b.designation)}</div><div class="produit-vente-stock">Reste : <span>${b.stock}</span> btl(s)</div><div class="produit-vente-prix">${affP}</div></div><div class="produit-vente-actions"><button class="btn btn-sm" onclick="modifierPanier(${b.id},-1)">−</button><input type="number" class="qte-input" id="qte-${b.id}" value="${qte}" min="0" max="${b.stock}" onchange="saisirQuantiteDirecte(${b.id},this.value,${b.stock})" onfocus="this.select()"><button class="btn btn-sm" onclick="modifierPanier(${b.id},1)">+</button></div></div>`;
   }).join('');
 }
@@ -749,7 +749,7 @@ function modifierPanier(id, delta) {
 
 function saisirQuantiteDirecte(id, valeur, stockDispo) {
   let qte = parseInt(valeur); if (isNaN(qte)||qte<0) qte=0;
-  if (qte>stockDispo) { alert(`⚠️ Stock insuffisant ! Max : ${stockDispo}`); qte=stockDispo; }
+  if (qte>stockDispo) { alert(`△  Stock insuffisant ! Max : ${stockDispo}`); qte=stockDispo; }
   const b = boissons.find(i => i.id===id); if (!b) return;
   if (b.prix_unitaire<=0&&qte>0) { alert(`❌ Fixe d'abord le prix de ${escape(b.designation)}.`); afficherVentes(); return; }
   if (qte===0) delete panier[id]; else panier[id]=qte;
@@ -791,7 +791,7 @@ function afficherDerniereVente() {
 
 // ==================== MODAL VENTE ====================
 function ouvrirModalVente() {
-  if (Object.keys(panier).length===0) { toast('⚠️ Panier vide !','warning'); return; }
+  if (Object.keys(panier).length===0) { toast('△  Panier vide !','warning'); return; }
   let total=0, html='';
   for (const id in panier) {
     const b = boissons.find(i => i.id==id); if (!b) continue;
@@ -916,10 +916,10 @@ function afficherHistorique() {
     const num = historique.length - historique.indexOf(v);
     let det = v.articles&&v.articles.length>0 ? v.articles.map(a=>`${a.nom||'?'} ×${a.qte}`).join(', ') : '—';
     const dU = det.toUpperCase();
-    let badge='💰 VENTE', ligneClasse='';
-    if (dU.includes('PAIEMENT FOURNISSEUR')) { badge='💳 ACHAT FOURN.'; ligneClasse='ligne-fournisseur'; }
-    else if (dU.includes('RETOUR CLIENT')) { badge='🔄 RETOUR'; ligneClasse='ligne-retour'; }
-    else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='⚠️ PERTE'; ligneClasse='ligne-perte'; }
+    let badge='$ VENTE', ligneClasse='';
+    if (dU.includes('PAIEMENT FOURNISSEUR')) { badge=' ACHAT FOURN.'; ligneClasse='ligne-fournisseur'; }
+    else if (dU.includes('RETOUR CLIENT')) { badge='↺ RETOUR'; ligneClasse='ligne-retour'; }
+    else if (dU.includes('PERTE')||dU.includes('CASSE')) { badge='△  PERTE'; ligneClasse='ligne-perte'; }
     const total=parseInt(v.total)||0, benef=parseInt(v.benef)||0;
     return `<tr class="${ligneClasse}">
       <td style="padding:10px;font-size:13px;"><div style="font-weight:bold;">#${num} <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">${badge}</span></div><div style="margin-top:3px;" class="txt-secondaire">⏱️ ${v.date}</div></td>
@@ -975,13 +975,13 @@ function exporterExcel() {
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
   a.download=`ventes_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-  toast('📊 Export Excel téléchargé !');
+  toast('⇥ Export Excel téléchargé !');
 }
 
 // ==================== RÉINITIALISATIONS ====================
 async function reinitialiserVentes() {
-  if (!confirm("⚠️ SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
-  if (!confirm("🔴 DERNIÈRE CONFIRMATION — Continuer ?")) return;
+  if (!confirm("△  SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
+  if (!confirm("◍ DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
     await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
     await client.from('ventes').delete().eq('bar_id', barActuel.id);
@@ -990,7 +990,7 @@ async function reinitialiserVentes() {
 }
 
 async function reinitialiserFournisseur() {
-  if (!confirm("⚠️ Vider tout l'historique fournisseur ?")) return;
+  if (!confirm("△  Vider tout l'historique fournisseur ?")) return;
   try {
     await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
@@ -998,7 +998,7 @@ async function reinitialiserFournisseur() {
 }
 
 async function reinitialiserVentesServeuse() {
-  if (!confirm("⚠️ Réinitialiser les ventes de toutes les serveuses ?")) return;
+  if (!confirm("△  Réinitialiser les ventes de toutes les serveuses ?")) return;
   toast('Fonctionnalité à configurer selon le besoin.', 'warning');
 }
 
@@ -1008,7 +1008,7 @@ async function enregistrerLivraisonFournisseur() {
   const detail = document.getElementById('fourn-detail-livraison')?.value?.trim();
   const montant = parseInt(montantStr);
   if (!montant||montant<=0) { toast('❌ Montant invalide !','error'); return; }
-  if (!detail) { toast('⚠️ Ajoute un détail de livraison !','warning'); return; }
+  if (!detail) { toast('△  Ajoute un détail de livraison !','warning'); return; }
   try {
     const { error } = await client.from('fournisseur_historique').insert([
       { bar_id: barActuel.id, type_action: 'LIVRAISON', montant, commentaire: detail },
@@ -1048,7 +1048,7 @@ async function envoyerTotalVersHistoriqueFournisseur() {
   try {
     const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
     const montant = cfg?parseInt(cfg.valeur)||0:0;
-    if (montant<=0) { toast('⚠️ Montant à 0 FCFA, rien à transférer.','warning'); return; }
+    if (montant<=0) { toast('△  Montant à 0 FCFA, rien à transférer.','warning'); return; }
     let recapLignes = '', recapTexte = '';
     if (commandeEnCours.length > 0) {
       recapLignes = commandeEnCours.map(c => `<tr><td style="padding:7px 10px;">${c.designation}</td><td style="padding:7px 10px;">${c.type}</td><td style="padding:7px 10px;text-align:right;">${c.qte} btl</td><td style="padding:7px 10px;text-align:right;font-weight:bold;color:#2e7d32;">${formatPrix(c.cout)}</td></tr>`).join('');
@@ -1061,7 +1061,7 @@ async function envoyerTotalVersHistoriqueFournisseur() {
     const contenu = document.getElementById('modal-recap-contenu');
     const titre = modal?.querySelector('.modal-title');
     const btnConfirmer = modal?.querySelector('.modal-btns .btn:last-child');
-    if (titre) titre.innerHTML = '📦 Confirmer la livraison fournisseur';
+    if (titre) titre.innerHTML = '⨝ Confirmer la livraison fournisseur';
     if (contenu) contenu.innerHTML = `
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">
         <thead><tr style="background:#e8f5e9;"><th style="padding:7px 10px;text-align:left;">Boisson</th><th style="padding:7px 10px;text-align:left;">Format</th><th style="padding:7px 10px;text-align:right;">Qté</th><th style="padding:7px 10px;text-align:right;">Coût</th></tr></thead>
@@ -1101,7 +1101,7 @@ async function modifierPrixTotalFournisseurStockage() {
     const titre = modal?.querySelector('.modal-title');
     const btnConf = modal?.querySelector('.modal-btns .btn:last-child');
     const btnAnn = modal?.querySelector('.modal-btns .btn-danger');
-    if (titre) titre.innerHTML = '✏️ Modifier le montant fournisseur';
+    if (titre) titre.innerHTML = '⋯ Modifier le montant fournisseur';
     if (contenu) contenu.innerHTML = `
       <div style="margin-bottom:12px;font-size:14px;" class="txt-secondaire">Montant actuel : <strong>${formatPrix(actuel)}</strong></div>
       <div style="display:flex;flex-direction:column;gap:8px;">
@@ -1110,7 +1110,7 @@ async function modifierPrixTotalFournisseurStockage() {
       </div>`;
     if (btnAnn) { btnAnn.style.display=''; btnAnn.innerText='✖ Annuler'; btnAnn.onclick = () => { fermerModalVente(); if(btnConf){btnConf.innerText='✅ Encaisser';btnConf.onclick=confirmerVenteFinale;} }; }
     if (btnConf) {
-      btnConf.innerText = '💾 Enregistrer';
+      btnConf.innerText = '※ Enregistrer';
       btnConf.onclick = async () => {
         const nv = parseInt(document.getElementById('input-nouveau-montant').value);
         if (isNaN(nv) || nv < 0) { toast('❌ Montant invalide.','error'); return; }
@@ -1136,20 +1136,20 @@ function telechargerPDFVentes() {
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
   const totalPertes = pertesRetours.reduce((s,v)=>s+Math.abs(parseInt(v.benef)||0),0);
   const recapHTML = `<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;"><div style="flex:1;min-width:130px;background:#e8f5e9;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #2e7d32;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Chiffre d'Affaires</div><div style="font-size:20px;font-weight:bold;color:#2e7d32;">${formatPrix(totalCA)}</div></div><div style="flex:1;min-width:130px;background:#e3f2fd;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #0288d1;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Bénéfice Net</div><div style="font-size:20px;font-weight:bold;color:${totalBenef<0?'#c62828':'#0288d1'};">${formatPrix(totalBenef)}</div></div><div style="flex:1;min-width:130px;background:#fff3e0;padding:14px;border-radius:8px;text-align:center;border-left:5px solid #ef6c00;"><div style="font-size:12px;color:#555;text-transform:uppercase;">Total Pertes & Retours</div><div style="font-size:20px;font-weight:bold;color:#ef6c00;">${formatPrix(totalPertes)}</div></div></div>`;
-  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:9px;border:1px solid #ccc;}th{background:#f0f0f0;}h2{color:#2e7d32;}</style></head><body><h2>📊 Historique des Ventes — Consensus BarStock</h2><p style="color:#888;">Généré le : ${new Date().toLocaleString('fr-FR')}</p>${recapHTML}${table.outerHTML}</body></html>`;
+  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:9px;border:1px solid #ccc;}th{background:#f0f0f0;}h2{color:#2e7d32;}</style></head><body><h2>⇥ Historique des Ventes — Consensus BarStock</h2><p style="color:#888;">Généré le : ${new Date().toLocaleString('fr-FR')}</p>${recapHTML}${table.outerHTML}</body></html>`;
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download=`ventes_${new Date().toISOString().slice(0,10)}.html`; a.click();
-  toast('⬇️ PDF ventes téléchargé');
+  toast('↡PDF ventes téléchargé');
 }
 
 function telechargerPDFFournisseur() {
   const tL=document.getElementById('fourn-livraisons-rows')?.closest('table');
   const totalL=document.getElementById('fourn-total-livre')?.innerText||'';
   const totalP=document.getElementById('fournisseur-bilan-paye')?.innerText||'';
-  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><p>Total Livré : <strong>${totalL}</strong> | Total Payé : <strong>${totalP}</strong></p><h3>📦 Livraisons</h3>${tL?tL.outerHTML:''}</body></html>`;
+  const html=`<html><head><meta charset="UTF-8"><style>body{font-family:Arial}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{padding:8px;border:1px solid #ccc}th{background:#f0f0f0}h2{color:#2e7d32}</style></head><body><h2>🏪 Suivi Fournisseur</h2><p>Date : ${new Date().toLocaleString('fr-FR')}</p><p>Total Livré : <strong>${totalL}</strong> | Total Payé : <strong>${totalP}</strong></p><h3>⨝ Livraisons</h3>${tL?tL.outerHTML:''}</body></html>`;
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
   a.download=`fournisseur_${new Date().toISOString().slice(0,10)}.html`; a.click();
-  toast('⬇️ PDF fournisseur téléchargé');
+  toast('↡ PDF fournisseur téléchargé');
 }
 
 function envoyerWhatsAppVentes() {
@@ -1159,7 +1159,7 @@ function envoyerWhatsAppVentes() {
   const ventesSeules = historique.filter(v => !estSpecial(v));
   const totalCA = ventesSeules.reduce((s,v)=>s+(parseInt(v.total)||0),0);
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
-  const stats = `\n CA Ventes : ${formatPrix(totalCA)}↠\n Bénéfice Net : ${formatPrix(totalBenef)}`;
+  const stats = `\n ↠CA Ventes : ${formatPrix(totalCA)}\n ↠Bénéfice Net : ${formatPrix(totalBenef)}`;
   window.open(`https://wa.me/?text=${encodeURIComponent('*RÉCAPITULATIF VENTES CAISSE*\n\n'+lignes+stats+'\n\nDate : '+new Date().toLocaleDateString('fr-FR'))}`, '_blank');
 }
 
@@ -1177,7 +1177,7 @@ function envoyerWhatsAppFournisseur() {
 async function ouvrirNouvelleCommande() {
   const table = document.getElementById('cmd-table')?.value.trim();
   const clientNom = document.getElementById('cmd-client')?.value.trim();
-  if (!table) { toast('⚠️ Indique un numéro de table', 'warning'); return; }
+  if (!table) { toast('△  Indique un numéro de table', 'warning'); return; }
   const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0 }]).select().single();
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('cmd-table').value = '';
@@ -1210,9 +1210,9 @@ function afficherCommandes() {
       <div style="font-size:13px;margin-bottom:10px;" class="txt-secondaire">${detail}</div>
       ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${escape(cmd.note)}</div>` : ''}
       <div style="display:flex;gap:8px;">
-        <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">✏️ Modifier</button>
+        <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">⋯ Modifier</button>
         <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId(${cmd.id})">✅ Encaisser</button>
-        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">🗑️</button>
+        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">⨆</button>
       </div>
     </div>`;
   }).join('');
@@ -1280,7 +1280,7 @@ function ajouterArticleCommande(id) {
   if (!b) return;
 
   if (b.stock <= 0) {
-    toast(`⚠️ Stock insuffisant pour ${escape(b.designation)}`, 'warning');
+    toast(`△  Stock insuffisant pour ${escape(b.designation)}`, 'warning');
     return;
   }
 
@@ -1329,7 +1329,7 @@ async function sauvegarderCommande() {
     .eq('id', commandeActive.id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
 
-  toast('💾 Commande sauvegardée !');
+  toast('※ Commande sauvegardée !');
   document.getElementById('modal-commande').classList.remove('visible');
   await chargerCommandes();
 }
@@ -1348,7 +1348,7 @@ async function encaisserCommande() {
   const cmd = commandeActive;
 
   if (!cmdArticles || cmdArticles.length === 0) {
-    toast('⚠️ Aucun article dans la commande', 'warning');
+    toast('△  Aucun article dans la commande', 'warning');
     return;
   }
 
@@ -1417,7 +1417,7 @@ async function annulerCommande(id) {
     .update({ statut: 'annulee' }).eq('id', id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
 
-  toast('🗑️ Commande annulée — stock remis à jour');
+  toast('⨆ Commande annulée — stock remis à jour');
   await initialiserApplication();
   await chargerCommandes();
 }
@@ -1430,8 +1430,8 @@ function mettreAJourBadgeCommandes() {
 }
 
 function ouvrirModalEnvoyerTable() {
-  if (Object.keys(panier).length === 0) { toast('⚠️ Panier vide !', 'warning'); return; }
-  if (commandesOuvertes.length === 0) { toast('⚠️ Aucune table ouverte', 'warning'); return; }
+  if (Object.keys(panier).length === 0) { toast('△  Panier vide !', 'warning'); return; }
+  if (commandesOuvertes.length === 0) { toast('△  Aucune table ouverte', 'warning'); return; }
   const div = document.getElementById('modal-tables-liste');
   if (div) {
     div.innerHTML = commandesOuvertes.map(cmd => {
@@ -1596,8 +1596,8 @@ function appliquerRestrictions() {
 async function ajouterServeuse() {
   const nom = document.getElementById('srv-nom')?.value.trim();
   const pin = document.getElementById('srv-pin')?.value.trim();
-  if (!nom) { toast('⚠️ Nom obligatoire', 'warning'); return; }
-  if (!pin || pin.length < 4) { toast('⚠️ PIN trop court (4 min)', 'warning'); return; }
+  if (!nom) { toast('△  Nom obligatoire', 'warning'); return; }
+  if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
   const { error } = await client.from('serveuses').insert([{ bar_id: barActuel.id, nom, code_pin: pin }]);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('srv-nom').value = '';
@@ -1610,7 +1610,7 @@ async function chargerListeServeuses() {
   const { data } = await client.from('serveuses').select('*').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
   if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
-  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
+  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">⨆</button></div>`).join('');
 }
 
 async function chargerRapportServeuses() {
@@ -1671,7 +1671,7 @@ async function chargerRapportServeuses() {
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
   await client.from('serveuses').delete().eq('id', id);
-  toast('🗑️ Serveuse supprimée');
+  toast('⨆ Serveuse supprimée');
   chargerListeServeuses();
 }
 
