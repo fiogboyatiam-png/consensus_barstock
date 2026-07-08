@@ -1159,7 +1159,7 @@ function envoyerWhatsAppVentes() {
   const ventesSeules = historique.filter(v => !estSpecial(v));
   const totalCA = ventesSeules.reduce((s,v)=>s+(parseInt(v.total)||0),0);
   const totalBenef = historique.reduce((s,v)=>s+(parseInt(v.benef)||0),0);
-  const stats = `\n💰 CA Ventes : ${formatPrix(totalCA)}\n📈 Bénéfice Net : ${formatPrix(totalBenef)}`;
+  const stats = `\n CA Ventes : ${formatPrix(totalCA)}↠\n Bénéfice Net : ${formatPrix(totalBenef)}`;
   window.open(`https://wa.me/?text=${encodeURIComponent('*RÉCAPITULATIF VENTES CAISSE*\n\n'+lignes+stats+'\n\nDate : '+new Date().toLocaleDateString('fr-FR'))}`, '_blank');
 }
 
@@ -1169,7 +1169,7 @@ function envoyerWhatsAppFournisseur() {
   const rowsL=document.querySelectorAll('#fourn-livraisons-rows tr');
   let livs='';
   rowsL.forEach(r=>{ const c=r.querySelectorAll('td'); if(c.length>=2) livs+=`• ${c[0].innerText} — ${c[2].innerText}\n`; });
-  const msg=`*SUIVI FOURNISSEUR*\n\n📦 Livraisons :\n${livs}\n✅ Total Livré : ${tL}\n💳 Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
+  const msg=`*SUIVI FOURNISSEUR*\n\nLivraisons :\n${livs}\n↠ Total Livré : ${tL}\n↠ Total Payé : ${tP}\nDate : ${new Date().toLocaleDateString('fr-FR')}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
