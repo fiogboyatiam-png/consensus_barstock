@@ -1710,7 +1710,7 @@ async function changerNomBar() {
     barActuel.nom = nom;
     localStorage.setItem('barstock_bar_nom', nom);
     const nomEl = document.getElementById('nom-bar-actuel');
-    if (nomEl) nomEl.innerText = `BarStock - ${nom} (${utilisateurActuel.nom})`;
+    if (nomEl) nomEl.innerText = `BarStock - ${escape(nom)} (${utilisateurActuel.nom})`;
     document.getElementById('profil-nom').value = '';
     document.getElementById('profil-nom').placeholder = nom;
     afficherMessageProfil('✅ Nom du bar mis à jour !');
