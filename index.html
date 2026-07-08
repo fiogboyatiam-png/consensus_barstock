@@ -91,7 +91,7 @@
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
         <button onclick="chargerTableauAdmin()"
           style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
-          🔄 Actualiser
+          ↺ Actualiser
         </button>
       </div>
       <div style="overflow-x:auto;">
@@ -199,7 +199,7 @@
         🧾 Commandes <span id="badge-commandes" style="display:none; background:#c62828; color:white; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:5px;">0</span>
       </button>
       <button class="nav-btn" data-section="historique" onclick="showSection('historique')"><i data-lucide="clipboard-list" class="icon"></i> Historique</button>
-      <button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">📊 Serveuses</button>
+      <button class="nav-btn gerant-only" data-section="rapport-serveuses" onclick="showSection('rapport-serveuses')">※ Serveuses</button>
       <button class="nav-btn" data-section="corbeille" onclick="showSection('corbeille')"><i data-lucide="trash-2" class="icon"></i> Corbeille</button>
     </nav>
   </div>
@@ -275,7 +275,7 @@
     <!-- ===== ÉTAT STOCK ===== -->
     <div id="etat-stock" class="section">
       <div class="card">
-        <h3 style="margin-bottom:6px;">📊 État Général des Produits</h3>
+        <h3 style="margin-bottom:6px;">※ État Général des Produits</h3>
         <p style="font-size:13px; color:#888; margin-bottom:14px;">Lignes colorées selon l'état du stock</p>
         <input type="text" id="search-stock" class="search-box" placeholder="🔍 Rechercher..." oninput="filtrerEtatStock()">
         <table id="table-etat-produits">
@@ -292,10 +292,10 @@
     <div id="stockage-recup" class="section">
       <div class="card">
         <div style="display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap;">
-          <button id="btn-mode-appro" onclick="changerModeStockage('appro')" class="stockage-mode-active" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">📦 Approvisionnement fournisseur</button>
-          <button id="btn-mode-retour" onclick="changerModeStockage('retour')" class="stockage-mode-inactive" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">🔄 Retour client / Pertes</button>
+          <button id="btn-mode-appro" onclick="changerModeStockage('appro')" class="stockage-mode-active" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;"> Approvisionnement fournisseur</button>
+          <button id="btn-mode-retour" onclick="changerModeStockage('retour')" class="stockage-mode-inactive" style="padding:10px 16px; font-size:14px; border-radius:8px; cursor:pointer; font-weight:700; transition:0.2s;">↺ Retour client / Pertes</button>
         </div>
-        <h3 id="stockage-titre" style="margin-top:0;">📦 Approvisionnement fournisseur</h3>
+        <h3 id="stockage-titre" style="margin-top:0;">⨝ Approvisionnement fournisseur</h3>
         <p id="stockage-description" style="font-size:13px; color:#888; margin-bottom:16px;">💡 Gestion des stocks.</p>
         <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
           <input type="text" id="search-stockage" class="search-box" style="max-width:320px;" placeholder="🔍 Rechercher..." oninput="afficherStockage()">
@@ -314,9 +314,9 @@
         </table>
         <div id="zone-total-fournisseur" style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:14px; border:1px solid #e2e8f0; border-radius:8px; margin-top:14px; flex-wrap:wrap; gap:10px;">
           <div style="display:flex; align-items:center; gap:10px;">
-            <span>💰 <strong>Montant total dû au fournisseur :</strong></span>
+            <span>$ <strong>Montant total dû au fournisseur :</strong></span>
             <span id="total-fournisseur-stockage" style="font-size:18px; font-weight:bold; color:#2e7d32;">0 FCFA</span>
-            <button style="background:none; border:none; cursor:pointer; font-size:16px;" onclick="modifierPrixTotalFournisseurStockage()" title="Modifier">✏️</button>
+            <button style="background:none; border:none; cursor:pointer; font-size:16px;" onclick="modifierPrixTotalFournisseurStockage()" title="Modifier">⋯⋯</button>
           </div>
           <button class="btn" onclick="envoyerTotalVersHistoriqueFournisseur()">🚀 Valider comme Versement</button>
         </div>
@@ -359,7 +359,7 @@
             <div class="card derniere-vente-card">
               <div class="derniere-vente-label">🔙 Dernière vente enregistrée</div>
               <div id="derniere-vente-info" class="derniere-vente-info">—</div>
-              <button class="btn btn-warning" style="width:100%; font-size:13px;" onclick="annulerDerniereVente()">↩️ Annuler la dernière vente</button>
+              <button class="btn btn-warning" style="width:100%; font-size:13px;" onclick="annulerDerniereVente()">↩ Annuler la dernière vente</button>
             </div>
           </div>
         </div>
@@ -405,9 +405,9 @@
             <label>🏷️ Type</label>
             <select id="filtre-histo-type" onchange="afficherHistorique()">
               <option value="">Tous</option>
-              <option value="vente">💰 Ventes</option>
-              <option value="retour">🔄 Retours</option>
-              <option value="perte">⚠️ Pertes</option>
+              <option value="vente">$ Ventes</option>
+              <option value="retour">↺ Retours</option>
+              <option value="perte">△ Pertes</option>
               <option value="fournisseur">💳 Fournisseur</option>
             </select>
           </div>
@@ -427,8 +427,8 @@
         <div class="btn-group">
           <button class="btn btn-info" onclick="telechargerPDFVentes()">⬇️ PDF</button>
           <button class="btn btn-green" onclick="envoyerWhatsAppVentes()">📲 WhatsApp</button>
-          <button class="btn btn-warning" onclick="exporterExcel()">📊 Excel</button>
-          <button class="btn btn-danger" onclick="reinitialiserVentes()">🗑️ Réinitialiser</button>
+          <button class="btn btn-warning" onclick="exporterExcel()">※ Excel</button>
+          <button class="btn btn-danger" onclick="reinitialiserVentes()">⨆ Réinitialiser</button>
         </div>
       </div>
 
@@ -444,7 +444,7 @@
         <div class="card-header" style="background:#388e3c;"><h3>🏪 Suivi Fournisseur</h3></div>
         <div class="fourn-bilan-box" id="fourn-bilan-box">
           <div class="fourn-bilan-item fourn-bilan-livraisons">
-            <div class="fourn-bilan-label">📦 Total Livré</div>
+            <div class="fourn-bilan-label">⨝ Total Livré</div>
             <div class="fourn-bilan-val" id="fourn-total-livre">0 FCFA</div>
           </div>
           <div class="fourn-bilan-item fourn-bilan-paie">
@@ -452,7 +452,7 @@
             <div class="fourn-bilan-val" id="fournisseur-bilan-paye">0 FCFA</div>
           </div>
         </div>
-        <div class="fourn-section-titre fourn-titre-livraison">📦 Enregistrer une livraison fournisseur</div>
+        <div class="fourn-section-titre fourn-titre-livraison">⨝ Enregistrer une livraison fournisseur</div>
         <div style="display:grid; grid-template-columns:1fr 2fr auto; gap:10px; margin-bottom:18px; align-items:flex-end;">
           <div style="display:flex; flex-direction:column; gap:5px;">
             <label>Montant de la livraison (FCFA)</label>
@@ -462,9 +462,9 @@
             <label>Détail de la livraison</label>
             <input type="text" id="fourn-detail-livraison" placeholder="Ex: 5 cas. PILS + 3 cas. FLAG — Facture N°12" style="width:100%; box-sizing:border-box;">
           </div>
-          <button class="btn" onclick="enregistrerLivraisonFournisseur()" style="white-space:nowrap; align-self:flex-end;">📦 Enregistrer livraison</button>
+          <button class="btn" onclick="enregistrerLivraisonFournisseur()" style="white-space:nowrap; align-self:flex-end;">⨝ Enregistrer livraison</button>
         </div>
-        <div class="fourn-section-titre fourn-titre-livraison">📦 Historique des Livraisons</div>
+        <div class="fourn-section-titre fourn-titre-livraison">⨝ Historique des Livraisons</div>
         <table>
           <thead><tr>
             <th>Date & Heure</th><th>Détail livraison</th><th>Montant livré</th>
@@ -474,7 +474,7 @@
         <div class="btn-group">
           <button class="btn btn-info" onclick="telechargerPDFFournisseur()">⬇️ PDF</button>
           <button class="btn btn-green" onclick="envoyerWhatsAppFournisseur()">📲 WhatsApp</button>
-          <button class="btn btn-danger" onclick="reinitialiserFournisseur()">🗑️ Réinitialiser</button>
+          <button class="btn btn-danger" onclick="reinitialiserFournisseur()">⨆ Réinitialiser</button>
         </div>
       </div>
     </div>
@@ -497,7 +497,7 @@
         <div id="liste-serveuses-gestion"></div>
       </div>
       <div class="card">
-        <div class="card-header" style="background:#0f3d22;"><h3>📊 Rapport par Serveuse</h3></div>
+        <div class="card-header" style="background:#0f3d22;"><h3>※ Rapport par Serveuse</h3></div>
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; align-items:end;">
           <div style="display:flex; flex-direction:column; gap:5px;">
             <label style="font-size:13px; font-weight:600;">Période</label>
@@ -508,8 +508,8 @@
               <option value="all">Tout</option>
             </select>
           </div>
-          <button class="btn" onclick="chargerRapportServeuses()">🔄 Actualiser</button>
-          <button class="btn btn-danger" onclick="reinitialiserVentesServeuse()">🗑️ Réinitialiser</button>
+          <button class="btn" onclick="chargerRapportServeuses()">↺ Actualiser</button>
+          <button class="btn btn-danger" onclick="reinitialiserVentesServeuse()">⨆ Réinitialiser</button>
         </div>
         <div id="rapport-stats-globales" style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;"></div>
         <div id="rapport-serveuses-contenu"></div>
@@ -519,7 +519,7 @@
     <!-- ===== CORBEILLE ===== -->
     <div id="corbeille" class="section">
       <div class="card">
-        <div class="card-header" style="background:#c62828;"><h3>🗑️ Corbeille — Boissons supprimées</h3></div>
+        <div class="card-header" style="background:#c62828;"><h3>⨆ Corbeille — Boissons supprimées</h3></div>
         <p style="font-size:13px; color:#888; margin-bottom:14px;">Les boissons ici peuvent être restaurées ou supprimées définitivement.</p>
         <table>
           <thead>
@@ -530,7 +530,7 @@
           <tbody id="corbeille-rows"></tbody>
         </table>
         <div class="btn-group" style="margin-top:14px;">
-          <button class="btn btn-danger" onclick="viderCorbeille()">🗑️ Vider la corbeille</button>
+          <button class="btn btn-danger" onclick="viderCorbeille()">⨆ Vider la corbeille</button>
         </div>
       </div>
     </div>
@@ -551,7 +551,7 @@
             </div>
             <button onclick="changerNomBar()"
               style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
-              💾 Enregistrer
+              ※ Enregistrer
             </button>
           </div>
         </div>
@@ -580,7 +580,7 @@
             </div>
             <button onclick="changerMotDePasse()"
               style="background:#1a6b3a; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; align-self:flex-start;">
-              💾 Changer le mot de passe
+              ※ Changer le mot de passe
             </button>
           </div>
         </div>
@@ -596,7 +596,7 @@
             </div>
             <button onclick="changerPinGerant()"
               style="background:#d4a017; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
-              💾 Enregistrer
+              ※ Enregistrer
             </button>
           </div>
         </div>
@@ -625,7 +625,7 @@
       </div>
       <div class="modal-btns">
         <button class="btn btn-danger" onclick="fermerModalCommande()">✖ Fermer</button>
-        <button class="btn" onclick="sauvegarderCommande()">💾 Sauvegarder</button>
+        <button class="btn" onclick="sauvegarderCommande()">※ Sauvegarder</button>
         <button class="btn" style="background:#2e7d32;" onclick="encaisserCommande()">✅ Encaisser</button>
       </div>
     </div>
