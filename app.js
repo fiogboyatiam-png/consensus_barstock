@@ -469,12 +469,24 @@ function afficherCatalogue() {
     const st = b.stock === 0 ? '<span class="tag tag-rouge">Épuisé</span>'
       : (b.stock <= b.seuil ? '<span class="tag tag-orange">Seuil Alerte</span>' : '<span class="tag tag-vert">Stock OK</span>');
     const prix = `<div style="font-size:13px;">⨝ 1 Cas. : <strong>${formatPrix(b.pu_initial)}</strong><br>🥛 ½ Cas. : ${formatPrix(b.demi_cassier || Math.round(b.pu_initial/2))}${b.type_bouteille==="petit bouteille"&&b.quart_cassier?`<br>🧪 ¼ Cas. : ${formatPrix(b.quart_cassier)}`:''}</div>`;
-    return `<tr><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}</td><td><strong>${b.stock}</strong></td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button> <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">⋯ Prix</button> <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">⨆</button></td></tr>`;
+    return `<tr><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille==="petit bouteille"?"Petit":"Grand"}</span></td><td>${b.categorie||'-'}</td><td>${prix}</td><td>${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'<em style="color:#ef6c00;">À configurer</em>'}
+    </td><td><strong>${b.stock}</strong></td>
+    <td>${st}</td>
+    
+    <td>
+    ${utilisateurActuel?.role === 'gerant' ? `
+  <button class="btn btn-sm" onclick="modifierStock(${b.id})">📏 Stock</button>
+  <button class="btn btn-sm" onclick="modifierPrixUnitaire(${b.id})">✏️ Prix</button>
+  <button class="btn btn-danger btn-sm" onclick="supprimerBoisson(${b.id})">🗑️</button>
+` : '—'}
+    </td
+    tr>`;
   }).join('');
   rafraichirIcones();
 }
 
 async function modifierStock(id) {
+  if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Stock de ${escape(b.designation)}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<0) { alert("❌ Nombre valide requis"); return; }
@@ -483,6 +495,7 @@ async function modifierStock(id) {
 }
 
 async function modifierSeuil(id) {
+  if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Seuil d'alerte pour ${escape(b.designation)}\nActuel : ${b.seuil||6}`, b.seuil||6); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<1) { alert("❌ Seuil invalide"); return; }
@@ -491,6 +504,7 @@ async function modifierSeuil(id) {
 }
 
 async function ajouterBoisson(e) {
+  if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   if (e) e.preventDefault();
   if (!barActuel) return;
   const nom = document.getElementById('cat-nom').value.trim().toUpperCase();
@@ -518,6 +532,7 @@ async function ajouterBoisson(e) {
 }
 
 async function modifierPrixUnitaire(id) {
+   if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   const b = boissons.find(i => i.id === id);
   if (!b) return;
   const rep = prompt(`Prix vente unitaire de ${escape(b.designation)} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire);
@@ -533,13 +548,14 @@ async function modifierPrixUnitaire(id) {
 }
 
 async function supprimerBoisson(id) {
+  if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   if (!confirm("Mettre cette boisson à la corbeille ?")) return;
   try {
     const { error } = await client.from('boissons')
       .update({ supprime: true, supprime_le: dateStr() })
       .eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
-    toast('⨆ Boisson mise à la corbeille');
+    toast('🗑️ Boisson mise à la corbeille');
     await initialiserApplication();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
@@ -550,7 +566,7 @@ async function chargerCorbeille() {
     .order('supprime_le', { ascending: false });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   const tbody = document.getElementById('corbeille-rows'); if (!tbody) return;
-  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vide">⨆ Corbeille vide</td></tr>'; return; }
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vide">🗑️ Corbeille vide</td></tr>'; return; }
   tbody.innerHTML = data.map(b => `
     <tr>
       <td><strong>${escape(b.designation)}</strong></td>
@@ -559,7 +575,7 @@ async function chargerCorbeille() {
       <td style="color:#888;font-size:13px;">🕐 ${escape(b.supprime_le || '-')}</td>
       <td>
         <button class="btn btn-sm" onclick="restaurerBoisson(${b.id})">♻️ Restaurer</button>
-        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})">⨆ Supprimer</button>
+        <button class="btn btn-danger btn-sm" onclick="supprimerDefinitivement(${b.id})">🗑️ Supprimer</button>
       </td>
     </tr>`).join('');
 }
@@ -580,7 +596,7 @@ async function supprimerDefinitivement(id) {
   try {
     const { error } = await client.from('boissons').delete().eq('id', id).eq('bar_id', barActuel.id);
     if (error) throw error;
-    toast('⨆ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
+    toast('🗑️ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
@@ -589,7 +605,7 @@ async function viderCorbeille() {
   try {
     const { error } = await client.from('boissons').delete().eq('bar_id', barActuel.id).eq('supprime', true);
     if (error) throw error;
-    toast('⨆ Corbeille vidée', 'warning'); chargerCorbeille();
+    toast('🗑️ Corbeille vidée', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
@@ -622,7 +638,14 @@ function afficherEtatProduits() {
     if (b.stock===0) { rs='class="row-rupture"'; st='<span class="tag tag-rouge">◍ RUPTURE</span>'; }
     else if (b.stock<=seuil) { rs='class="row-alerte"'; st='<span class="tag tag-orange">🟠 STOCK BAS</span>'; }
     else { rs='class="row-ok"'; st='<span class="tag tag-vert">🟢 OK</span>'; }
-    return `<tr ${rs}><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td><td><button class="btn btn-sm" onclick="modifierStock(${b.id})">⨝ Stock</button> <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button></td></tr>`;
+    return `<tr ${rs}><td><strong>${escape(b.designation)}</strong></td><td><span class="tag-type">${b.type_bouteille}</span></td><td>${b.categorie||'-'}</td><td><strong>${b.stock}</strong></td><td>${seuil} btl</td><td>${st}</td>
+    <td>
+    ${utilisateurActuel?.role === 'gerant' ? `
+  <button class="btn btn-sm" onclick="modifierStock(${b.id})">📦 Stock</button>
+  <button class="btn btn-sm btn-warning" onclick="modifierSeuil(${b.id})">⚙️ Seuil</button>
+` : '—'}
+    </td>
+    </tr>`;
   }).join('');
   rafraichirIcones();
 }
@@ -1212,7 +1235,7 @@ function afficherCommandes() {
       <div style="display:flex;gap:8px;">
         <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">⋯ Modifier</button>
         <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId(${cmd.id})">✅ Encaisser</button>
-        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">⨆</button>
+        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">🗑️</button>
       </div>
     </div>`;
   }).join('');
@@ -1417,7 +1440,7 @@ async function annulerCommande(id) {
     .update({ statut: 'annulee' }).eq('id', id);
   if (error) { toast('❌ ' + error.message, 'error'); return; }
 
-  toast('⨆ Commande annulée — stock remis à jour');
+  toast('🗑️ Commande annulée — stock remis à jour');
   await initialiserApplication();
   await chargerCommandes();
 }
@@ -1610,7 +1633,7 @@ async function chargerListeServeuses() {
   const { data } = await client.from('serveuses').select('*').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
   if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
-  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">⨆</button></div>`).join('');
+  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
 }
 
 async function chargerRapportServeuses() {
@@ -1671,7 +1694,7 @@ async function chargerRapportServeuses() {
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
   await client.from('serveuses').delete().eq('id', id);
-  toast('⨆ Serveuse supprimée');
+  toast('🗑️ Serveuse supprimée');
   chargerListeServeuses();
 }
 
