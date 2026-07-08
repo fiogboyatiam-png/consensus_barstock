@@ -1251,7 +1251,8 @@ function filtrerBoissonsCommande() { const q = document.getElementById('modal-cm
 function afficherBoissonsCommande(recherche) {
   const div = document.getElementById('modal-cmd-boissons'); if (!div) return;
   const terme = recherche.toLowerCase();
-  const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme));
+  const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme)) .sort((a,b) => a.designation.localeCompare(b.designation));   // ← tri alphabétique;
+  
   if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
   div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${b.designation}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
@@ -1502,15 +1503,34 @@ async function envoyerPanierVersTable(cmdId) {
 }
 
 // ==================== DÉMARRAGE ====================
+// ==================== DÉMARRAGE (VERSION CORRIGÉE) ====================
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("✅ DOM chargé - Initialisation de BarStock");
+
   appliquerDarkMode();
   gererConnexion();
-  const sCat=document.getElementById('search-catalogue'); if(sCat)sCat.addEventListener('input',afficherCatalogue);
-  const sVen=document.getElementById('search-ventes'); if(sVen)sVen.addEventListener('input',afficherVentes);
+
+  // Attacher les événements une fois le DOM prêt
+  const sCat = document.getElementById('search-catalogue');
+  if (sCat) sCat.addEventListener('input', afficherCatalogue);
+
+  const sVen = document.getElementById('search-ventes');
+  if (sVen) sVen.addEventListener('input', afficherVentes);
+
+  // Connexion avec Enter
   const connEmail = document.getElementById('conn-email');
   const connPassword = document.getElementById('conn-password');
-  [connEmail, connPassword].forEach(el => { if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); }); });
-  setInterval(() => { if (document.getElementById('commandes')?.classList.contains('active')) afficherCommandes(); }, 30000);
+  if (connEmail) connEmail.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); });
+  if (connPassword) connPassword.addEventListener('keydown', e => { if (e.key === 'Enter') seConnecter(); });
+
+  // Bouton connexion (sécurité supplémentaire)
+  const btnConn = document.getElementById('btn-connexion');
+  if (btnConn) btnConn.addEventListener('click', seConnecter);
+
+  setInterval(() => { 
+    if (document.getElementById('commandes')?.classList.contains('active')) afficherCommandes(); 
+  }, 30000);
+
   restaurerSession();
 });
 
