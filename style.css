@@ -595,6 +595,13 @@ hr.sep { border: 0; border-top: 2px dashed #ccc; margin: 36px 0; }
 .auth-eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: 0; background: transparent; color: transparent; cursor: pointer; }
 .auth-eye::before, .auth-eye::after { content: ""; position: absolute; inset: 7px 4px; border: 2px solid #9ca3af; border-radius: 50% 50% 45% 45%; }
 .auth-eye::after { width: 6px; height: 6px; inset: 11px auto auto 11px; background: #9ca3af; border: 0; border-radius: 50%; }
+
+/* Bouton "oeil" réutilisable pour les champs PIN / mot de passe hors écran de connexion */
+.pw-wrap { position: relative; width: 100%; }
+.pw-wrap input { padding-right: 44px !important; }
+.pw-eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border: 0; background: transparent; color: transparent; cursor: pointer; padding: 0; }
+.pw-eye::before, .pw-eye::after { content: ""; position: absolute; inset: 6px 3px; border: 2px solid #888; border-radius: 50% 50% 45% 45%; }
+.pw-eye::after { width: 5px; height: 5px; inset: 10px auto auto 10px; background: #888; border: 0; border-radius: 50%; }
 .auth-submit { height: 42px; border: 0; border-radius: 7px; background: #188a42; color: white; font-size: 14px; font-weight: 800; cursor: pointer; }
 .auth-submit:hover { background: #0f7a3a; }
 .auth-submit:disabled { opacity: 0.65; cursor: not-allowed; }

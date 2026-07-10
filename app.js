@@ -1869,19 +1869,7 @@ async function changerMotDePasse() {
   }
 }
 
-async function changerPinGerant() {
-  const pin = (document.getElementById('profil-pin')?.value || '').trim();
-  if (!pin || pin.length < 4) { afficherMessageProfil('PIN trop court (minimum 4 chiffres).', false); return; }
 
-  try {
-    const { error } = await client.rpc('changer_pin_gerant', { p_bar_id: barActuel.id, p_nouveau_pin: pin });
-    if (error) throw error;
-    document.getElementById('profil-pin').value = '';
-    afficherMessageProfil('✅ PIN Gérant mis à jour !');
-  } catch (err) {
-    afficherMessageProfil('❌ Erreur : ' + err.message, false);
-  }
-}
 async function changerMotDePasseAdmin() {
   const actuel = prompt('Mot de passe actuel (obligatoire) :');
   if (!actuel) return;
