@@ -187,12 +187,7 @@ async function seConnecter() {
     if (error) throw error;
 
     // Vérification admin via config plutôt qu'UUID hardcodé
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -229,12 +224,7 @@ async function restaurerSession() {
     if (!session) { afficherEcranAuth(); return; }
 
     // Vérification admin via config
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(session.user.id) || session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    if (session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
