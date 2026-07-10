@@ -787,24 +787,15 @@ function afficherStockage() {
   rafraichirIcones();
 }
 
-async function entreeStock(id, type) {
-  const b=boissons.find(i=>i.id===id); if (!b) return;
-  const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
-  let qte=0, cout=0, txt='';
-  if (type==='cassier') { qte=qpc; cout=b.pu_initial; txt="1 cassier entier"; }
-  else if (type==='demi') { qte=Math.round(qpc/2); cout=b.demi_cassier||Math.round(b.pu_initial/2); txt="un demi-cassier"; }
-  else if (type==='quart') { qte=Math.round(qpc/4); cout=b.quart_cassier||Math.round(b.pu_initial/4); txt="un quart-cassier"; }
-  if (!confirm(`Ajouter ${txt} (${qte} btl) pour ${escape(b.designation)} ?`)) return;
+async function ajusterRetour(id, delta) {
+  const b = boissons.find(i => i.id===id); if (!b) return;
+  const msg = delta>0?`Retour client : ${escape(b.designation)}. Stock +1, vente déduite (${formatPrix(b.prix_unitaire)}).`:`Perte/casse : ${escape(b.designation)}. Stock -1.`;
+  if (!confirm(msg)) return;
   try {
-    const { error:eS } = await client.from('boissons').update({ stock:b.stock+qte }).eq('id', id).eq('bar_id', barActuel.id);
-    if (eS) throw eS;
-    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
-    const nv=(cfg?parseInt(cfg.valeur)||0:0)+cout;
-    await client.from('config').update({ valeur:nv.toString() }).eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
-    const existing=commandeEnCours.find(c=>c.designation===b.designation&&c.type===txt);
-    if (existing) { existing.qte+=qte; existing.cout+=cout; }
-    else commandeEnCours.push({ designation:b.designation, type:txt, qte, cout });
-    toast(`✅ +${qte} btl ${escape(b.designation)}`); await initialiserApplication();
+    const { error } = await client.rpc('ajuster_retour', { p_bar_id: barActuel.id, p_boisson_id: id, p_delta: delta });
+    if (error) throw error;
+    toast(delta>0?'↺ Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
+    await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -924,36 +915,26 @@ async function confirmerVenteFinale() {
 
 async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
-  const ids = Object.keys(panier).map(Number);
-  const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
-  for (const b of stockFrais || []) {
-    const qte = panier[b.id];
-    if (qte > b.stock) { toast(`❌ Stock insuffisant pour ${escape(b.designation)} (reste ${b.stock})`, 'error'); await initialiserApplication(); return; }
-  }
-  let tv=0, tb=0; const arts=[];
-  for (const id in panier) {
-    const qte=panier[id], b=boissons.find(i=>i.id==id); if (!b) continue;
-    const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
-    const aU=b.pu_initial>0?Math.round(b.pu_initial/qpc):0;
-    tv+=b.prix_unitaire*qte; tb+=(b.prix_unitaire-aU)*qte;
-    arts.push({ id:b.id, designation:b.designation, quantite:qte, prix_unitaire:b.prix_unitaire, stockActuel:b.stock });
-  }
+  const articles = Object.entries(panier).map(([id, qte]) => ({ id: Number(id), quantite: qte }));
   try {
-    const { data: tr, error } = await client.from('ventes')
-      .insert([{ total:tv, benefice:tb, benef:tb, bar_id:barActuel.id, note: note || null, serveuse: utilisateurActuel?.nom || null }])
-      .select().single();
+    const { data, error } = await client.rpc('enregistrer_vente', {
+      p_bar_id: barActuel.id,
+      p_articles: articles,
+      p_serveuse: utilisateurActuel?.nom || null,
+      p_note: note || null
+    });
     if (error) throw error;
-    for (const art of arts) {
-      await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:art.designation, quantite:art.quantite, prix_unitaire:art.prix_unitaire, bar_id:barActuel.id }]);
-      await client.from('boissons').update({ stock:art.stockActuel-art.quantite }).eq('id', art.id).eq('bar_id', barActuel.id);
-    }
+    const resultat = Array.isArray(data) ? data[0] : data;
     const noteEl = document.getElementById('note-vente');
     if (noteEl) noteEl.value = '';
-    toast('✅ Vente enregistrée ! '+formatPrix(tv)); panier={};
+    toast('✅ Vente enregistrée ! ' + formatPrix(resultat.total_vente));
+    panier = {};
     await initialiserApplication();
-  } catch (err) { toast('❌ Erreur vente : '+err.message,'error'); }
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
+    await initialiserApplication();
+  }
 }
-
 function annulerVente() {
   if (Object.keys(panier).length===0) return;
   if (!confirm("Vider le panier ?")) return;
