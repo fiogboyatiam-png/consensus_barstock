@@ -49,6 +49,70 @@ function escape(str) {
   return div.innerHTML;
 }
 
+// ==================== SÉCURITÉ ====================
+const HASH_SALT = 'BarStock2024!@#SecurePepper';
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 5;
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+const rateLimitStore = {};
+
+function verifierRateLimit(action) {
+  const now = Date.now();
+  if (!rateLimitStore[action]) rateLimitStore[action] = [];
+  rateLimitStore[action] = rateLimitStore[action].filter(t => now - t < RATE_LIMIT_WINDOW);
+  if (rateLimitStore[action].length >= RATE_LIMIT_MAX) {
+    const wait = Math.ceil((RATE_LIMIT_WINDOW - (now - rateLimitStore[action][0])) / 1000);
+    throw new Error(`Trop de tentatives. Réessayez dans ${wait} secondes.`);
+  }
+  rateLimitStore[action].push(now);
+}
+
+async function hashPIN(pin) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + HASH_SALT);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function estUnHash(valeur) {
+  return typeof valeur === 'string' && valeur.length === 64 && /^[0-9a-f]{64}$/.test(valeur);
+}
+
+async function comparerPIN(saisie, stockee) {
+  if (estUnHash(stockee)) {
+    const hashSaisie = await hashPIN(saisie);
+    return hashSaisie === stockee;
+  }
+  return saisie === stockee;
+}
+
+let inactiviteTimer = null;
+let appDemarree = false;
+
+function demarrerSurveillanceInactivite() {
+  if (appDemarree) return;
+  appDemarree = true;
+  const reinit = () => {
+    clearTimeout(inactiviteTimer);
+    if (document.getElementById('app-principale')?.style.display !== 'none') {
+      inactiviteTimer = setTimeout(() => {
+        toast('⏰ Session expirée pour inactivité. Veuillez vous reconnecter.', 'warning');
+        seDeconnecter();
+      }, INACTIVITY_TIMEOUT);
+    }
+  };
+  ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'].forEach(evt => {
+    document.addEventListener(evt, reinit, { passive: true });
+  });
+  reinit();
+}
+
+function validerEntier(valeur, min = 0, max = Infinity) {
+  const n = parseInt(valeur);
+  if (isNaN(n) || n < min || n > max) return null;
+  return n;
+}
+
 // ==================== MODE SOMBRE ====================
 function toggleDarkMode() {
   document.body.classList.toggle('dark');
@@ -113,6 +177,8 @@ async function seConnecter() {
   if (!email) { afficherErreurAuth("L'email est obligatoire."); return; }
   if (!password) { afficherErreurAuth('Le mot de passe est obligatoire.'); return; }
 
+  try { verifierRateLimit('connexion'); } catch (e) { afficherErreurAuth(e.message); return; }
+
   const btnConn = document.getElementById('btn-connexion');
   if (btnConn) { btnConn.disabled = true; btnConn.innerText = 'Connexion...'; }
 
@@ -120,7 +186,13 @@ async function seConnecter() {
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
-    if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    // Vérification admin via config plutôt qu'UUID hardcodé
+    const { data: adminCfg } = await client.from('config')
+      .select('valeur')
+      .eq('cle', 'admin_users')
+      .single();
+    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
+    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -128,7 +200,7 @@ async function seConnecter() {
     const bar = await chargerBarUtilisateur(data.user.id);
     if (!bar) {
       await client.auth.signOut();
-      afficherErreurAuth("Aucun bar n'est lie a ce compte.");
+      afficherErreurAuth("Aucun bar n'est lié à ce compte.");
       return;
     }
     if (bar.actif === false) {
@@ -142,7 +214,7 @@ async function seConnecter() {
     localStorage.setItem('barstock_bar_nom', barActuel.nom);
     lancerApplication();
   } catch (err) {
-    afficherErreurAuth('Erreur : ' + err.message);
+    afficherErreurAuth('Email ou mot de passe incorrect.');
   } finally {
     if (btnConn) { btnConn.disabled = false; btnConn.innerText = 'Se connecter'; }
   }
@@ -150,22 +222,32 @@ async function seConnecter() {
 
 async function restaurerSession() {
   try {
-    const exp = parseInt(localStorage.getItem('barstock_expiration') || '0');
-    if (exp && Date.now() > exp) {
-      await client.auth.signOut();
-      localStorage.removeItem('barstock_expiration');
-      afficherEcranAuth(); return;
-    }
     const { data: sessionData, error: sessionError } = await client.auth.getSession();
     if (sessionError) throw sessionError;
 
     const session = sessionData.session;
     if (!session) { afficherEcranAuth(); return; }
 
-    if (session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') { afficherInterfaceAdmin(); return; }
+    // Vérification admin via config
+    const { data: adminCfg } = await client.from('config')
+      .select('valeur')
+      .eq('cle', 'admin_users')
+      .single();
+    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
+    if (adminIds.includes(session.user.id) || session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+      afficherInterfaceAdmin();
+      return;
+    }
 
     const bar = await chargerBarUtilisateur(session.user.id);
     if (!bar) { afficherEcranAuth(); return; }
+
+    // Vérifier que l'utilisateur est bien propriétaire du bar stocké en localStorage
+    const storedBarId = localStorage.getItem('barstock_bar_id');
+    if (storedBarId && storedBarId !== bar.id.toString()) {
+      localStorage.removeItem('barstock_bar_id');
+      localStorage.removeItem('barstock_bar_nom');
+    }
 
     if (bar.actif === false) {
       await client.auth.signOut();
@@ -216,16 +298,14 @@ async function afficherInterfaceAdmin() {
       const email = b.email || '—';
 
       const pinGerant = b.pin_gerant
-        ? `<code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;">${b.pin_gerant}</code>`
+        ? '<span style="color:#2e7d32;">✅ Défini</span>'
         : '<span style="color:#aaa;">Non défini</span>';
 
       const serveusesBar = b.serveuses || [];
       const serveusesHtml = serveusesBar.length === 0
         ? '<span style="color:#aaa;">Aucune</span>'
         : serveusesBar.map(s =>
-            `<div style="font-size:12px;">👤 ${escape(s.nom)} — 
-             <code style="background:#f0f0f0;padding:1px 6px;border-radius:4px;">${s.code_pin || '—'}</code>
-             </div>`
+            `<div style="font-size:12px;">👤 ${escape(s.nom)} — <span style="color:#888;">PIN protégé</span></div>`
           ).join('');
 
       return `<tr>
@@ -280,8 +360,11 @@ async function creerBar() {
   const password = (document.getElementById('new-bar-password')?.value || '').trim();
 
   if (!nom) { afficherErreurAdmin('Le nom du bar est obligatoire.'); return; }
-  if (!email) { afficherErreurAdmin("L'email est obligatoire."); return; }
-  if (!password || password.length < 6) { afficherErreurAdmin('Le mot de passe doit avoir au moins 6 caractères.'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { afficherErreurAdmin('Email invalide.'); return; }
+  if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+    afficherErreurAdmin('Le mot de passe doit avoir au moins 8 caractères avec majuscule, minuscule et chiffre.');
+    return;
+  }
 
   const btn = document.getElementById('btn-creer-bar');
   if (btn) { btn.disabled = true; btn.innerText = 'Création...'; }
@@ -312,7 +395,7 @@ async function creerBar() {
     await afficherInterfaceAdmin();
 
   } catch (err) {
-    afficherErreurAdmin('Erreur : ' + err.message);
+    afficherErreurAdmin('Erreur lors de la création. Vérifiez les informations et réessayez.');
   } finally {
     if (btn) { btn.disabled = false; btn.innerText = '➕ Créer le bar'; }
   }
@@ -336,15 +419,23 @@ function lancerApplication() {
 }
 
 async function seDeconnecter() {
-  if (!confirm(`Deconnecter ${barActuel?.nom} ?`)) return;
+  if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
   await client.auth.signOut();
   barActuel = null;
+  utilisateurActuel = null;
+  commandeActive = null;
+  commandesOuvertes = [];
+  commandeEnCours = [];
+  boissons = [];
+  panier = {};
+  historique = [];
   localStorage.removeItem('barstock_bar_id');
   localStorage.removeItem('barstock_bar_nom');
   localStorage.removeItem('barstock_expiration');
-  boissons = []; panier = {}; historique = [];
   client.removeAllChannels();
   realtimeActif = false;
+  appDemarree = false;
+  clearTimeout(inactiviteTimer);
   afficherEcranAuth();
 }
 
@@ -1074,7 +1165,7 @@ async function envoyerTotalVersHistoriqueFournisseur() {
     if (montant<=0) { toast('△  Montant à 0 FCFA, rien à transférer.','warning'); return; }
     let recapLignes = '', recapTexte = '';
     if (commandeEnCours.length > 0) {
-      recapLignes = commandeEnCours.map(c => `<tr><td style="padding:7px 10px;">${c.designation}</td><td style="padding:7px 10px;">${c.type}</td><td style="padding:7px 10px;text-align:right;">${c.qte} btl</td><td style="padding:7px 10px;text-align:right;font-weight:bold;color:#2e7d32;">${formatPrix(c.cout)}</td></tr>`).join('');
+      recapLignes = commandeEnCours.map(c => `<tr><td style="padding:7px 10px;">${escape(c.designation)}</td><td style="padding:7px 10px;">${escape(c.type)}</td><td style="padding:7px 10px;text-align:right;">${c.qte} btl</td><td style="padding:7px 10px;text-align:right;font-weight:bold;color:#2e7d32;">${formatPrix(c.cout)}</td></tr>`).join('');
       recapTexte = commandeEnCours.map(c => `${c.designation} (${c.type}, ${c.qte} btl) : ${formatPrix(c.cout)}`).join(' | ');
     } else {
       recapLignes = `<tr><td colspan="4" style="padding:10px;color:#888;font-style:italic;">Commande sans détail enregistré</td></tr>`;
@@ -1487,7 +1578,6 @@ async function envoyerPanierVersTable(cmdId) {
 // ==================== DÉMARRAGE ====================
 // ==================== DÉMARRAGE (VERSION CORRIGÉE) ====================
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("✅ DOM chargé - Initialisation de BarStock");
 
   appliquerDarkMode();
   gererConnexion();
@@ -1535,16 +1625,22 @@ function connexionGerant() {
 async function validerPinGerant() {
   const pin = document.getElementById('input-pin-gerant')?.value;
   const errEl = document.getElementById('erreur-pin-gerant');
-  const { data } = await client.from('config').select('valeur').eq('cle', 'pin_gerant').eq('bar_id', barActuel.id).single();
-  const pinStocke = data?.valeur;
-  if (!pinStocke) {
-    if (!pin || pin.length < 4) { if(errEl){errEl.textContent='PIN trop court (4 min)';errEl.style.display='block';} return; }
-    await client.from('config').insert([{ bar_id: barActuel.id, cle: 'pin_gerant', valeur: pin }]);
+  if (!pin || pin.length < 4) { if(errEl){errEl.textContent='PIN trop court (4 min)';errEl.style.display='block';} return; }
+
+  const { data: ok, error } = await client.rpc('verifier_pin_gerant', { p_bar_id: barActuel.id, p_pin: pin });
+
+  if (error) { if (errEl) { errEl.textContent = 'Erreur : ' + error.message; errEl.style.display = 'block'; } return; }
+
+  if (ok === null) {
+    // Aucun PIN défini pour ce bar : on en crée un
+    const { error: defErr } = await client.rpc('definir_pin_gerant', { p_bar_id: barActuel.id, p_pin: pin });
+    if (defErr) { if (errEl) { errEl.textContent = 'Erreur : ' + defErr.message; errEl.style.display = 'block'; } return; }
     toast('✅ PIN gérant défini !');
-  } else if (pin !== pinStocke) {
+  } else if (!ok) {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
     document.getElementById('input-pin-gerant').value = ''; return;
   }
+
   utilisateurActuel = { nom: 'Gérant', role: 'gerant' };
   document.getElementById('input-pin-gerant').value = '';
   if (errEl) errEl.style.display = 'none';
@@ -1582,8 +1678,10 @@ async function validerPinServeuse() {
   if (!serveuseSelectionnee) return;
   const pin = document.getElementById('input-pin-serveuse')?.value;
   const errEl = document.getElementById('erreur-pin-serveuse');
-  const { data } = await client.from('serveuses').select('code_pin').eq('id', serveuseSelectionnee.id).single();
-  if (!data || pin !== data.code_pin) {
+
+  const { data: ok, error } = await client.rpc('verifier_pin_serveuse', { p_serveuse_id: serveuseSelectionnee.id, p_pin: pin });
+
+  if (error || !ok) {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
     document.getElementById('input-pin-serveuse').value = ''; return;
   }
@@ -1601,6 +1699,7 @@ function lancerApplicationAvecRole() {
   if (nomEl) nomEl.innerText = `BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
   appliquerRestrictions();
   activerRealtime();
+  demarrerSurveillanceInactivite();
   initialiserApplication().then(() => {
     const estGerant = utilisateurActuel?.role === 'gerant';
     if (estGerant) { showSection('catalogue'); } else { showSection('ventes'); }
@@ -1621,7 +1720,7 @@ async function ajouterServeuse() {
   const pin = document.getElementById('srv-pin')?.value.trim();
   if (!nom) { toast('△  Nom obligatoire', 'warning'); return; }
   if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
-  const { error } = await client.from('serveuses').insert([{ bar_id: barActuel.id, nom, code_pin: pin }]);
+  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('srv-nom').value = '';
   document.getElementById('srv-pin').value = '';
@@ -1743,15 +1842,26 @@ async function changerNomBar() {
 }
 
 async function changerMotDePasse() {
+  const currentPassword = prompt('Entrez votre mot de passe actuel pour confirmer le changement :');
+  if (!currentPassword) return;
+
   const password = (document.getElementById('profil-password')?.value || '').trim();
   const confirmPassword = (document.getElementById('profil-password-confirm')?.value || '').trim();
 
-  if (!password || password.length < 6) { afficherMessageProfil('Le mot de passe doit avoir au moins 6 caractères.', false); return; }
+  if (!password || password.length < 8) { afficherMessageProfil('Le mot de passe doit avoir au moins 8 caractères.', false); return; }
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) { afficherMessageProfil('Le mot de passe doit contenir majuscule, minuscule et chiffre.', false); return; }
   if (password !== confirmPassword) { afficherMessageProfil('Les mots de passe ne correspondent pas.', false); return; }
 
   if (!confirm(`Changer le mot de passe ? Vous serez déconnecté et devrez vous reconnecter avec le nouveau mot de passe.`)) return;
 
   try {
+    // Vérifier l'ancien mot de passe
+    const { error: signInError } = await client.auth.signInWithPassword({
+      email: (await client.auth.getSession()).data.session?.user?.email || '',
+      password: currentPassword
+    });
+    if (signInError) { afficherMessageProfil('Mot de passe actuel incorrect.', false); return; }
+
     const { error } = await client.auth.updateUser({ password });
     if (error) throw error;
 
@@ -1774,8 +1884,7 @@ async function changerPinGerant() {
   if (!pin || pin.length < 4) { afficherMessageProfil('PIN trop court (minimum 4 chiffres).', false); return; }
 
   try {
-    const { error } = await client.from('config')
-      .upsert([{ bar_id: barActuel.id, cle: 'pin_gerant', valeur: pin }], { onConflict: 'bar_id,cle' });
+    const { error } = await client.rpc('changer_pin_gerant', { p_bar_id: barActuel.id, p_nouveau_pin: pin });
     if (error) throw error;
     document.getElementById('profil-pin').value = '';
     afficherMessageProfil('✅ PIN Gérant mis à jour !');
@@ -1784,12 +1893,26 @@ async function changerPinGerant() {
   }
 }
 async function changerMotDePasseAdmin() {
-  const nouveau = prompt('Nouveau mot de passe (min. 8 caractères) :');
-  if (!nouveau || nouveau.length < 8) { alert('Mot de passe trop court.'); return; }
-  const confirm = prompt('Confirmer le mot de passe :');
-  if (nouveau !== confirm) { alert('Les mots de passe ne correspondent pas.'); return; }
+  const actuel = prompt('Mot de passe actuel (obligatoire) :');
+  if (!actuel) return;
 
-  const { error } = await client.auth.updateUser({ password: nouveau });
-  if (error) { alert('Erreur : ' + error.message); return; }
-  alert('✅ Mot de passe mis à jour !');
+  const nouveau = prompt('Nouveau mot de passe (min. 8 caractères, majuscule, minuscule, chiffre) :');
+  if (!nouveau || nouveau.length < 8) { alert('Mot de passe trop court.'); return; }
+  if (!/[A-Z]/.test(nouveau) || !/[a-z]/.test(nouveau) || !/[0-9]/.test(nouveau)) { alert('Le mot de passe doit contenir majuscule, minuscule et chiffre.'); return; }
+  const confirmation = prompt('Confirmer le mot de passe :');
+  if (nouveau !== confirmation) { alert('Les mots de passe ne correspondent pas.'); return; }
+
+  try {
+    const { error: signInError } = await client.auth.signInWithPassword({
+      email: (await client.auth.getSession()).data.session?.user?.email || '',
+      password: actuel
+    });
+    if (signInError) { alert('Mot de passe actuel incorrect.'); return; }
+
+    const { error } = await client.auth.updateUser({ password: nouveau });
+    if (error) { alert('Erreur : ' + error.message); return; }
+    alert('✅ Mot de passe mis à jour !');
+  } catch (err) {
+    alert('Erreur : ' + err.message);
+  }
 }
