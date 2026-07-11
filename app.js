@@ -131,13 +131,271 @@ function appliquerDarkMode() {
 }
 
 // ==================== OFFLINE ====================
-function gererConnexion() {
+function cleFileAttente() { return `barstock_file_attente_${barActuel?.id || 'x'}`; }
+function cleCacheBoissons() { return `barstock_cache_boissons_${barActuel?.id || 'x'}`; }
+function cleCacheCommandes() { return `barstock_cache_commandes_${barActuel?.id || 'x'}`; }
+function cleCommandesEnAttente() { return `barstock_commandes_attente_${barActuel?.id || 'x'}`; }
+
+function sauverCacheCommandes(liste) { try { localStorage.setItem(cleCacheCommandes(), JSON.stringify(liste)); } catch {} }
+function lireCacheCommandes() { try { return JSON.parse(localStorage.getItem(cleCacheCommandes()) || '[]'); } catch { return []; } }
+function lireCommandesEnAttente() { try { return JSON.parse(localStorage.getItem(cleCommandesEnAttente()) || '[]'); } catch { return []; } }
+function ecrireCommandesEnAttente(liste) { try { localStorage.setItem(cleCommandesEnAttente(), JSON.stringify(liste)); } catch {} mettreAJourBadgeOffline(); }
+// Retrouve (ou crée) l'entrée "en attente de synchro" correspondant à une commande en cours d'édition offline
+function obtenirOuCreerEntreeAttente(cmd) {
+  const attente = lireCommandesEnAttente();
+  let entry = attente.find(e => e.id == cmd.id);
+  if (!entry) {
+    entry = {
+      id: cmd.id, id_local: cmd.id_local || (typeof cmd.id === 'string' ? cmd.id : null),
+      table_num: cmd.table_num, client_nom: cmd.client_nom,
+      articles: JSON.parse(JSON.stringify(cmd.articles || [])),
+      total: cmd.total || 0, benef: 0, note: cmd.note || null,
+      serveuse: cmd.serveuse, created_at: cmd.created_at || new Date().toISOString(),
+      snapshotAvantOffline: JSON.parse(JSON.stringify(cmd.articles || [])), // dernier état connu du serveur
+      action: 'maj'
+    };
+    attente.push(entry);
+  }
+  return { attente, entry };
+}
+
+function lireFileAttente() {
+  try { return JSON.parse(localStorage.getItem(cleFileAttente()) || '[]'); } catch { return []; }
+}
+function ecrireFileAttente(file) {
+  try { localStorage.setItem(cleFileAttente(), JSON.stringify(file)); } catch {}
+  mettreAJourBadgeOffline();
+}
+
+function sauverCacheBoissons() {
+  try { localStorage.setItem(cleCacheBoissons(), JSON.stringify(boissons)); } catch {}
+}
+function lireCacheBoissons() {
+  try { return JSON.parse(localStorage.getItem(cleCacheBoissons()) || '[]'); } catch { return []; }
+}
+
+function mettreAJourBadgeOffline() {
   const banner = document.getElementById('offline-banner');
   if (!banner) return;
-  window.addEventListener('offline', () => banner.classList.add('visible'));
-  window.addEventListener('online', () => { banner.classList.remove('visible'); initialiserApplication(); });
-  if (!navigator.onLine) banner.classList.add('visible');
+  const n = lireFileAttente().length + lireCommandesEnAttente().length;
+  if (!navigator.onLine) {
+    banner.innerText = n > 0
+      ? `📡 Hors-ligne — ${n} opération(s) en attente, seront synchronisées au retour du réseau.`
+      : `📡 Hors-ligne — les ventes/commandes sont enregistrées en local et synchronisées au retour du réseau.`;
+    banner.classList.add('visible');
+  } else if (n > 0) {
+    banner.innerText = `🔄 Synchronisation de ${n} opération(s) en attente...`;
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
 }
+
+function gererConnexion() {
+  window.addEventListener('offline', mettreAJourBadgeOffline);
+  window.addEventListener('online', () => { traiterFileAttente(); synchroniserCommandesEnAttente(); });
+  mettreAJourBadgeOffline();
+}
+
+// Vente enregistrée localement quand il n'y a pas de réseau.
+// Elle utilise le cache local des boissons (le meilleur qu'on ait sous la main hors-ligne).
+async function validerVenteHorsLigne(note = '') {
+  if (Object.keys(panier).length === 0) return;
+  let tv = 0, tb = 0; const arts = [];
+  for (const id in panier) {
+    const qte = panier[id], b = boissons.find(i => i.id == id); if (!b) continue;
+    const qpc = b.quantite_par_cassier || (b.type_bouteille === "petit bouteille" ? 24 : 12);
+    const aU = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
+    tv += b.prix_unitaire * qte; tb += (b.prix_unitaire - aU) * qte;
+    arts.push({ id: b.id, designation: b.designation, quantite: qte, prix_unitaire: b.prix_unitaire });
+    b.stock = Math.max(0, b.stock - qte); // décrément local optimiste, pour ne pas survendre localement
+  }
+  sauverCacheBoissons();
+
+  const file = lireFileAttente();
+  file.push({
+    id_local: 'off_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    total: tv, benef: tb, note: note || null,
+    serveuse: utilisateurActuel?.nom || null,
+    articles: arts, horodatage: new Date().toISOString()
+  });
+  ecrireFileAttente(file);
+
+  const noteEl = document.getElementById('note-vente');
+  if (noteEl) noteEl.value = '';
+  toast('📡 Vente enregistrée en local (hors-ligne) ! Sera synchronisée au retour du réseau. ' + formatPrix(tv));
+  panier = {};
+  rafrachirVueActive();
+}
+
+let syncEnCours = false;
+async function traiterFileAttente() {
+  if (syncEnCours) return;
+  if (!barActuel || !navigator.onLine) { mettreAJourBadgeOffline(); return; }
+  const file = lireFileAttente();
+  if (file.length === 0) { mettreAJourBadgeOffline(); return; }
+
+  syncEnCours = true;
+  mettreAJourBadgeOffline();
+  let nbOk = 0, nbConflits = 0;
+  const restantes = [];
+
+  for (const venteOff of file) {
+    try {
+      let noteFinale = venteOff.note || null;
+      const conflitsVente = [];
+
+      const { data: tr, error: eV } = await client.from('ventes')
+        .insert([{ total: venteOff.total, benefice: venteOff.benef, benef: venteOff.benef,
+          bar_id: barActuel.id, note: noteFinale, serveuse: venteOff.serveuse }])
+        .select().single();
+      if (eV) throw eV;
+
+      for (const art of venteOff.articles) {
+        await client.from('vente_articles').insert([{
+          vente_id: tr.id, boisson_designation: art.designation,
+          quantite: art.quantite, prix_unitaire: art.prix_unitaire, bar_id: barActuel.id
+        }]);
+        const { data: res, error: eStock } = await client.rpc('decrementer_stock_boisson_force', {
+          p_boisson_id: art.id, p_bar_id: barActuel.id, p_quantite: art.quantite
+        });
+        if (!eStock && res && res[0]?.conflit) conflitsVente.push(art.designation);
+      }
+
+      if (conflitsVente.length > 0) {
+        nbConflits++;
+        const noteConflit = `⚠️ CONFLIT STOCK (vente hors-ligne) : ${conflitsVente.join(', ')} — stock insuffisant au moment de la synchro, à vérifier.`;
+        await client.from('ventes').update({ note: [noteFinale, noteConflit].filter(Boolean).join(' | ') }).eq('id', tr.id);
+      }
+      nbOk++;
+    } catch (err) {
+      // On garde la vente en file pour réessayer plus tard (ex: coupure réseau pendant la synchro elle-même)
+      restantes.push(venteOff);
+    }
+  }
+
+  ecrireFileAttente(restantes);
+  syncEnCours = false;
+
+  if (nbOk > 0) {
+    if (nbConflits > 0) toast(`✅ ${nbOk} vente(s) synchronisée(s), dont ${nbConflits} avec un écart de stock à vérifier (voir Historique).`, 'warning');
+    else toast(`✅ ${nbOk} vente(s) hors-ligne synchronisée(s) avec succès.`);
+  }
+  await initialiserApplication();
+  mettreAJourBadgeOffline();
+}
+
+// Réconcilie une commande modifiée hors-ligne avec le serveur, en comparant l'état
+// "avant offline" (snapshotAvantOffline) à l'état final, pour ne décompter/recréditer
+// le stock que sur ce qui a réellement changé (fonctionne pour création, édition ET annulation).
+async function synchroniserUneCommandeEnAttente(entry) {
+  const mapAvant = {};
+  (entry.snapshotAvantOffline || []).forEach(a => { mapAvant[a.id] = (mapAvant[a.id] || 0) + a.qte; });
+  const mapApres = {};
+  if (entry.action !== 'annuler') (entry.articles || []).forEach(a => { mapApres[a.id] = (mapApres[a.id] || 0) + a.qte; });
+
+  const idsBoissons = new Set([...Object.keys(mapAvant), ...Object.keys(mapApres)]);
+  const conflits = [];
+  for (const idStr of idsBoissons) {
+    const id = Number(idStr);
+    const delta = (mapApres[idStr] || 0) - (mapAvant[idStr] || 0);
+    if (delta > 0) {
+      const { data: res, error } = await client.rpc('decrementer_stock_boisson_force', { p_boisson_id: id, p_bar_id: barActuel.id, p_quantite: delta });
+      if (!error && res && res[0]?.conflit) {
+        const b = boissons.find(x => x.id === id);
+        conflits.push(b ? b.designation : ('#' + id));
+      }
+    } else if (delta < 0) {
+      await client.rpc('incrementer_stock_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_quantite: -delta });
+    }
+  }
+
+  if (entry.action === 'annuler') {
+    if (entry.id && !String(entry.id).startsWith('cmdloc_')) {
+      await client.from('commandes').update({ statut: 'annulee' }).eq('id', entry.id);
+    }
+    return { conflits: 0 };
+  }
+
+  const estNouvelle = !entry.id || String(entry.id).startsWith('cmdloc_');
+
+  if (entry.action === 'creer' || entry.action === 'maj') {
+    if (estNouvelle) {
+      const { data, error } = await client.from('commandes').insert([{
+        bar_id: barActuel.id, table_num: entry.table_num, client_nom: entry.client_nom || null,
+        statut: 'ouverte', articles: entry.articles, total: entry.total, note: entry.note || null,
+        serveuse: entry.serveuse
+      }]).select().single();
+      if (error) throw error;
+      entry.id = data.id;
+    } else {
+      await client.from('commandes').update({ articles: entry.articles, total: entry.total, note: entry.note || null }).eq('id', entry.id);
+    }
+    return { conflits: 0 };
+  }
+
+  if (entry.action === 'encaisser') {
+    if (estNouvelle) {
+      const { data, error } = await client.from('commandes').insert([{
+        bar_id: barActuel.id, table_num: entry.table_num, client_nom: entry.client_nom || null,
+        statut: 'ouverte', articles: entry.articles, total: entry.total, note: entry.note || null,
+        serveuse: entry.serveuse
+      }]).select().single();
+      if (error) throw error;
+      entry.id = data.id;
+    }
+    let noteFinale = entry.note || null;
+    if (conflits.length > 0) {
+      noteFinale = [noteFinale, `⚠️ CONFLIT STOCK (commande hors-ligne) : ${conflits.join(', ')} — à vérifier.`].filter(Boolean).join(' | ');
+    }
+    const { data: vente, error: eV } = await client.from('ventes').insert([{
+      bar_id: barActuel.id, total: entry.total, benefice: entry.benef || 0, benef: entry.benef || 0,
+      note: noteFinale, serveuse: entry.serveuse
+    }]).select().single();
+    if (eV) throw eV;
+    for (const a of entry.articles || []) {
+      await client.from('vente_articles').insert([{ vente_id: vente.id, bar_id: barActuel.id, boisson_designation: a.designation, quantite: a.qte, prix_unitaire: a.prix }]);
+    }
+    await client.from('commandes').update({ statut: 'payee' }).eq('id', entry.id);
+    return { conflits: conflits.length };
+  }
+  return { conflits: 0 };
+}
+
+let syncCommandesEnCours = false;
+async function synchroniserCommandesEnAttente() {
+  if (syncCommandesEnCours) return;
+  if (!barActuel || !navigator.onLine) { mettreAJourBadgeOffline(); return; }
+  const liste = lireCommandesEnAttente();
+  if (liste.length === 0) { mettreAJourBadgeOffline(); return; }
+
+  syncCommandesEnCours = true;
+  mettreAJourBadgeOffline();
+  let nbOk = 0, nbConflits = 0;
+  const restantes = [];
+
+  for (const entry of liste) {
+    try {
+      const res = await synchroniserUneCommandeEnAttente(entry);
+      nbOk++;
+      nbConflits += res.conflits || 0;
+    } catch (err) {
+      restantes.push(entry); // on réessaiera plus tard
+    }
+  }
+
+  ecrireCommandesEnAttente(restantes);
+  syncCommandesEnCours = false;
+
+  if (nbOk > 0) {
+    if (nbConflits > 0) toast(`✅ ${nbOk} commande(s) synchronisée(s), dont un écart de stock sur ${nbConflits} article(s) à vérifier.`, 'warning');
+    else toast(`✅ ${nbOk} commande(s) hors-ligne synchronisée(s).`);
+  }
+  await chargerCommandes();
+  await initialiserApplication();
+  mettreAJourBadgeOffline();
+}
+
 
 // ==================== AUTHENTIFICATION ====================
 
@@ -450,6 +708,7 @@ async function initialiserApplication() {
       .order('designation', { ascending: true });
     if (eB) throw eB;
     boissons = db || [];
+    sauverCacheBoissons();
 
     const { data: dv, error: eV } = await client
       .from('ventes')
@@ -477,8 +736,17 @@ async function initialiserApplication() {
     mettreAJourStatsDuJour();
     rafrachirVueActive();
     await chargerCommandes();
+    mettreAJourBadgeOffline();
   } catch(err) {
-    toast('❌ Une erreur est survenue.', 'error');
+    // Pas de réseau ou erreur serveur : on retombe sur le cache local pour rester utilisable.
+    const cache = lireCacheBoissons();
+    if (cache.length > 0) {
+      boissons = cache;
+      rafrachirVueActive();
+      mettreAJourBadgeOffline();
+    } else if (navigator.onLine) {
+      toast('❌ Une erreur est survenue.', 'error');
+    }
   }
 }
 
@@ -930,6 +1198,7 @@ async function confirmerVenteFinale() {
 
 async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
+  if (!navigator.onLine) { await validerVenteHorsLigne(note); return; }
   const ids = Object.keys(panier).map(Number);
   const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
   const stockMap = {};
@@ -1327,6 +1596,27 @@ async function ouvrirNouvelleCommande() {
   const table = document.getElementById('cmd-table')?.value.trim();
   const clientNom = document.getElementById('cmd-client')?.value.trim();
   if (!table) { toast('△  Indique un numéro de table', 'warning'); return; }
+
+  if (!navigator.onLine) {
+    const idLocal = 'cmdloc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const nouvelleCmd = {
+      id: idLocal, id_local: idLocal, table_num: table, client_nom: clientNom || null,
+      statut: 'ouverte', articles: [], total: 0, note: null,
+      serveuse: utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null),
+      created_at: new Date().toISOString(), snapshotAvantOffline: [], action: 'creer'
+    };
+    const attente = lireCommandesEnAttente();
+    attente.push(nouvelleCmd);
+    ecrireCommandesEnAttente(attente);
+    commandesOuvertes.push({ ...nouvelleCmd, _enAttente: true });
+    document.getElementById('cmd-table').value = '';
+    document.getElementById('cmd-client').value = '';
+    toast('📡 Commande ouverte en local — ' + table + ' (sera synchronisée)');
+    afficherCommandes();
+    ouvrirModalCommande(nouvelleCmd);
+    return;
+  }
+
   const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0, serveuse: utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null) }]).select().single();
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('cmd-table').value = '';
@@ -1337,13 +1627,31 @@ async function ouvrirNouvelleCommande() {
 }
 
 async function chargerCommandes() {
+  if (!navigator.onLine) {
+    const base = lireCacheCommandes();
+    const attente = lireCommandesEnAttente();
+    const idsGeres = new Set(attente.map(c => c.id));
+    let fusion = base.filter(c => !idsGeres.has(c.id));
+    fusion = fusion.concat(attente.filter(c => c.action !== 'annuler' && c.action !== 'encaisser').map(c => ({ ...c, _enAttente: true })));
+    if (utilisateurActuel?.role !== 'gerant') {
+      fusion = fusion.filter(c => c.serveuse === (utilisateurActuel?.nom || ''));
+    }
+    commandesOuvertes = fusion;
+    afficherCommandes();
+    return;
+  }
   let query = client.from('commandes').select('*').eq('bar_id', barActuel.id).eq('statut', 'ouverte').order('created_at', { ascending: true });
   if (utilisateurActuel?.role !== 'gerant') {
     query = query.eq('serveuse', utilisateurActuel?.nom || '');
   }
   const { data, error } = await query;
-  if (error) { console.error(error); return; }
+  if (error) {
+    commandesOuvertes = lireCacheCommandes();
+    afficherCommandes();
+    return;
+  }
   commandesOuvertes = data || [];
+  sauverCacheCommandes(commandesOuvertes);
   afficherCommandes();
 }
 
@@ -1356,17 +1664,18 @@ function afficherCommandes() {
     const detail = articles.length > 0 ? articles.map(a => `${escape(a.designation)} x${a.qte}`).join(', ') : 'Aucun article';
     const label = cmd.client_nom ? `${escape(cmd.table_num)} — ${escape(cmd.client_nom)}` : escape(cmd.table_num);
     const badgeServeuse = (utilisateurActuel?.role === 'gerant' && cmd.serveuse) ? `<span style="margin-left:8px;font-size:11px;background:#eef2ff;color:#3730a3;padding:2px 7px;border-radius:10px;">👤 ${escape(cmd.serveuse)}</span>` : '';
+    const badgeAttente = cmd._enAttente ? `<span style="margin-left:8px;font-size:11px;background:#fff3e0;color:#ef6c00;padding:2px 7px;border-radius:10px;">📡 non synchronisée</span>` : '';
     return `<div class="carte-commande">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div><span style="font-weight:700;font-size:15px;">${label}</span>${badgeServeuse}<span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
+        <div><span style="font-weight:700;font-size:15px;">${label}</span>${badgeServeuse}${badgeAttente}<span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
         <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
       </div>
       <div style="font-size:13px;margin-bottom:10px;" class="txt-secondaire">${detail}</div>
       ${cmd.note ? `<div style="font-size:12px;color:#0288d1;font-style:italic;margin-bottom:8px;">📝 ${escape(cmd.note)}</div>` : ''}
       <div style="display:flex;gap:8px;">
-        <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id==${cmd.id}))">⋯ Modifier</button>
-        <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId(${cmd.id})">✅ Encaisser</button>
-        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande(${cmd.id})">🗑️</button>
+        <button class="btn" style="flex:1;" onclick="ouvrirModalCommande(commandesOuvertes.find(c=>c.id=='${cmd.id}'))">⋯ Modifier</button>
+        <button class="btn" style="flex:1;background:#2e7d32;" onclick="encaisserCommandeId('${cmd.id}')">✅ Encaisser</button>
+        <button class="btn btn-danger" style="flex:0;" onclick="annulerCommande('${cmd.id}')">🗑️</button>
       </div>
     </div>`;
   }).join('');
@@ -1390,7 +1699,6 @@ function ouvrirModalCommande(cmd) {
   document.getElementById('modal-commande').classList.add('visible');
 }
 
-function fermerModalCommande() { document.getElementById('modal-commande').classList.remove('visible'); commandeActive = null; }
 
 function afficherArticlesCommande() {
   const div = document.getElementById('modal-cmd-articles'); if (!div || !commandeActive) return;
@@ -1428,6 +1736,27 @@ async function ajouterArticleCommande(id) {
     return;
   }
 
+  if (!navigator.onLine) {
+    b.stock = Math.max(0, b.stock - 1);
+    sauverCacheBoissons();
+
+    const articles = commandeActive.articles || [];
+    const existe = articles.find(a => a.id === id);
+    if (existe) { existe.qte += 1; }
+    else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: 1 }); }
+    commandeActive.articles = articles;
+    commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
+    const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
+    entry.articles = JSON.parse(JSON.stringify(articles));
+    entry.total = commandeActive.total;
+    ecrireCommandesEnAttente(attente);
+
+    afficherArticlesCommande();
+    afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+    return;
+  }
+
   // Décrément atomique côté serveur : vérifie le VRAI stock au moment du clic,
   // même si une autre serveuse est en train de faire la même chose ailleurs.
   const { data: nouveauStock, error } = await client.rpc('decrementer_stock_boisson', {
@@ -1462,6 +1791,22 @@ async function retirerArticleCommande(index) {
   if (!article) return;
 
   const b = boissons.find(i => i.id === article.id);
+
+  if (!navigator.onLine) {
+    if (b) { b.stock += 1; sauverCacheBoissons(); }
+    if (article.qte > 1) { article.qte -= 1; } else { articles.splice(index, 1); }
+    commandeActive.total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
+
+    const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
+    entry.articles = JSON.parse(JSON.stringify(articles));
+    entry.total = commandeActive.total;
+    ecrireCommandesEnAttente(attente);
+
+    afficherArticlesCommande();
+    afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+    return;
+  }
+
   if (b) {
     const { data: nouveauStock, error } = await client.rpc('incrementer_stock_boisson', {
       p_boisson_id: article.id, p_bar_id: barActuel.id, p_quantite: 1
@@ -1480,6 +1825,19 @@ async function retirerArticleCommande(index) {
 async function sauvegarderCommande() {
   if (!commandeActive) return;
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
+  commandeActive.note = note;
+
+  if (!navigator.onLine) {
+    const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
+    entry.articles = JSON.parse(JSON.stringify(commandeActive.articles || []));
+    entry.total = commandeActive.total;
+    entry.note = note;
+    ecrireCommandesEnAttente(attente);
+    toast('📡 Commande sauvegardée en local (sera synchronisée)');
+    document.getElementById('modal-commande').classList.remove('visible');
+    afficherCommandes();
+    return;
+  }
 
   const { error } = await client.from('commandes')
     .update({ articles: commandeActive.articles, total: commandeActive.total, note })
@@ -1496,7 +1854,7 @@ function fermerModalCommande() {
   commandeActive = null;
 }
 
-async function encaisserCommandeId(id) { const cmd = commandesOuvertes.find(c => c.id === id); if (cmd) { commandeActive = cmd; await encaisserCommande(); } }
+async function encaisserCommandeId(id) { const cmd = commandesOuvertes.find(c => c.id == id); if (cmd) { commandeActive = cmd; await encaisserCommande(); } }
 
 async function encaisserCommande() {
   if (!commandeActive) return;
@@ -1509,12 +1867,8 @@ async function encaisserCommande() {
     return;
   }
 
-  // Sauvegarder d'abord
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
   const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
-  await client.from('commandes')
-    .update({ articles: cmdArticles, total: cmd.total, note: note || label })
-    .eq('id', cmdId);
 
   // Calculer total et bénéfice
   let total = 0, benef = 0;
@@ -1525,6 +1879,27 @@ async function encaisserCommande() {
     total += a.prix * a.qte;
     benef += (a.prix - achat) * a.qte;
   }
+
+  if (!navigator.onLine) {
+    const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
+    entry.articles = JSON.parse(JSON.stringify(cmdArticles));
+    entry.total = total;
+    entry.benef = benef;
+    entry.note = note || label;
+    entry.action = 'encaisser';
+    ecrireCommandesEnAttente(attente);
+
+    commandesOuvertes = commandesOuvertes.filter(c => c.id != cmdId);
+    fermerModalCommande();
+    toast('📡 Commande encaissée en local (hors-ligne) — ' + formatPrix(total) + ' — sera synchronisée');
+    afficherCommandes();
+    return;
+  }
+
+  // Sauvegarder d'abord
+  await client.from('commandes')
+    .update({ articles: cmdArticles, total: cmd.total, note: note || label })
+    .eq('id', cmdId);
 
   try {
     // Enregistrer la vente
@@ -1557,8 +1932,28 @@ async function encaisserCommande() {
 async function annulerCommande(id) {
   if (!confirm('Annuler cette commande ?')) return;
 
+  const cmd = commandesOuvertes.find(c => c.id == id);
+  if (!cmd) return;
+
+  if (!navigator.onLine) {
+    if (cmd.articles && cmd.articles.length > 0) {
+      for (const a of cmd.articles) {
+        const b = boissons.find(i => i.id === a.id);
+        if (b) b.stock += a.qte;
+      }
+      sauverCacheBoissons();
+    }
+    const { attente, entry } = obtenirOuCreerEntreeAttente(cmd);
+    entry.action = 'annuler';
+    ecrireCommandesEnAttente(attente);
+
+    commandesOuvertes = commandesOuvertes.filter(c => c.id != id);
+    toast('📡 Commande annulée en local — stock remis à jour (sera synchronisée)');
+    afficherCommandes();
+    return;
+  }
+
   // Récupérer la commande pour remettre le stock (incrément atomique)
-  const cmd = commandesOuvertes.find(c => c.id === id);
   if (cmd && cmd.articles && cmd.articles.length > 0) {
     for (const a of cmd.articles) {
       const { data: nouveauStock, error } = await client.rpc('incrementer_stock_boisson', {
@@ -1756,6 +2151,7 @@ function lancerApplicationAvecRole() {
   initialiserApplication().then(() => {
     const estGerant = utilisateurActuel?.role === 'gerant';
     if (estGerant) { showSection('catalogue'); } else { showSection('ventes'); }
+    if (navigator.onLine) { traiterFileAttente(); synchroniserCommandesEnAttente(); }
   });
 }
 
