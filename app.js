@@ -818,7 +818,7 @@ async function initialiserApplication() {
 
     const { data: dv, error: eV } = await client
       .from('ventes')
-      .select('id, total, benefice, benef, note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
+      .select('id, total, benefice, benef, note, date, created_at, serveuse, vente_articles(boisson_designation, quantite, prix_unitaire)')
       .eq('bar_id', barActuel.id)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -836,7 +836,7 @@ async function initialiserApplication() {
           if (Array.isArray(a)) arts = a.map(x => ({ nom: x.designation || x.nom, qte: x.qte || x.quantite }));
         } catch { arts = [{ nom: "⨝ PAIEMENT FOURNISSEUR", qte: 1 }]; }
       }
-      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts };
+      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts, serveuse: v.serveuse || null };
     });
 
     mettreAJourStatsDuJour();
@@ -1381,18 +1381,18 @@ function annulerVente() {
 }
 
 async function annulerDerniereVente() {
-  const vr = historique.filter(v => !estSpecial(v));
-  if (vr.length===0) { toast('Aucune vente à annuler.','warning'); return; }
+  const estGerant = utilisateurActuel?.role === 'gerant';
+  const vr = historique.filter(v => !estSpecial(v) && (estGerant || v.serveuse === utilisateurActuel?.nom));
+  if (vr.length===0) { toast(estGerant ? 'Aucune vente à annuler.' : 'Aucune de tes ventes à annuler.','warning'); return; }
   const v = vr[0];
   const det = (v.articles||[]).map(a=>`${a.nom} ×${a.qte}`).join(', ');
   if (!confirm(`Annuler la vente du ${v.date} ?\n${det}\nTotal : ${formatPrix(v.total)}\n\nLe stock sera remis à jour.`)) return;
   try {
-    for (const art of v.articles||[]) {
-      const b = boissons.find(i=>i.designation===art.nom);
-      if (b) await client.from('boissons').update({ stock:b.stock+art.qte }).eq('id',b.id).eq('bar_id', barActuel.id);
-    }
-    await client.from('vente_articles').delete().eq('vente_id',v.id);
-    await client.from('ventes').delete().eq('id',v.id);
+    const { error } = await client.rpc('annuler_vente', {
+      p_vente_id: v.id,
+      p_serveuse_nom: estGerant ? null : (utilisateurActuel?.nom || null)
+    });
+    if (error) throw error;
     toast('↩️ Vente annulée, stock remis à jour.','info'); await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
