@@ -187,7 +187,12 @@ async function seConnecter() {
     if (error) throw error;
 
     // Vérification admin via config plutôt qu'UUID hardcodé
-if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    const { data: adminCfg } = await client.from('config')
+      .select('valeur')
+      .eq('cle', 'admin_users')
+      .single();
+    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
+    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -224,7 +229,12 @@ async function restaurerSession() {
     if (!session) { afficherEcranAuth(); return; }
 
     // Vérification admin via config
-    if (session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    const { data: adminCfg } = await client.from('config')
+      .select('valeur')
+      .eq('cle', 'admin_users')
+      .single();
+    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
+    if (adminIds.includes(session.user.id) || session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -787,15 +797,24 @@ function afficherStockage() {
   rafraichirIcones();
 }
 
-async function ajusterRetour(id, delta) {
-  const b = boissons.find(i => i.id===id); if (!b) return;
-  const msg = delta>0?`Retour client : ${escape(b.designation)}. Stock +1, vente déduite (${formatPrix(b.prix_unitaire)}).`:`Perte/casse : ${escape(b.designation)}. Stock -1.`;
-  if (!confirm(msg)) return;
+async function entreeStock(id, type) {
+  const b=boissons.find(i=>i.id===id); if (!b) return;
+  const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
+  let qte=0, cout=0, txt='';
+  if (type==='cassier') { qte=qpc; cout=b.pu_initial; txt="1 cassier entier"; }
+  else if (type==='demi') { qte=Math.round(qpc/2); cout=b.demi_cassier||Math.round(b.pu_initial/2); txt="un demi-cassier"; }
+  else if (type==='quart') { qte=Math.round(qpc/4); cout=b.quart_cassier||Math.round(b.pu_initial/4); txt="un quart-cassier"; }
+  if (!confirm(`Ajouter ${txt} (${qte} btl) pour ${escape(b.designation)} ?`)) return;
   try {
-    const { error } = await client.rpc('ajuster_retour', { p_bar_id: barActuel.id, p_boisson_id: id, p_delta: delta });
-    if (error) throw error;
-    toast(delta>0?'↺ Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
-    await initialiserApplication();
+    const { error:eS } = await client.from('boissons').update({ stock:b.stock+qte }).eq('id', id).eq('bar_id', barActuel.id);
+    if (eS) throw eS;
+    const { data:cfg } = await client.from('config').select('valeur').eq('cle','total_fournisseur').eq('bar_id', barActuel.id).single();
+    const nv=(cfg?parseInt(cfg.valeur)||0:0)+cout;
+    await client.from('config').update({ valeur:nv.toString() }).eq('cle','total_fournisseur').eq('bar_id', barActuel.id);
+    const existing=commandeEnCours.find(c=>c.designation===b.designation&&c.type===txt);
+    if (existing) { existing.qte+=qte; existing.cout+=cout; }
+    else commandeEnCours.push({ designation:b.designation, type:txt, qte, cout });
+    toast(`✅ +${qte} btl ${escape(b.designation)}`); await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
@@ -904,10 +923,6 @@ function ouvrirModalVente() {
 function fermerModalVente() { document.getElementById('modal-confirm-vente').classList.remove('visible'); }
 
 async function confirmerVenteFinale() {
-  for (const id in panier) {
-    const b = boissons.find(i => i.id==id); if (!b) continue;
-    if (panier[id]>b.stock) { fermerModalVente(); toast(`❌ Stock insuffisant pour ${escape(b.designation)} !`,'error'); await initialiserApplication(); return; }
-  }
   const note = (document.getElementById('note-vente')?.value || '').trim();
   fermerModalVente();
   await validerVente(note);
@@ -915,26 +930,75 @@ async function confirmerVenteFinale() {
 
 async function validerVente(note = '') {
   if (Object.keys(panier).length===0) return;
-  const articles = Object.entries(panier).map(([id, qte]) => ({ id: Number(id), quantite: qte }));
+  const ids = Object.keys(panier).map(Number);
+  const { data: stockFrais } = await client.from('boissons').select('id, stock, designation').in('id', ids).eq('bar_id', barActuel.id);
+  const stockMap = {};
+  (stockFrais || []).forEach(s => { stockMap[s.id] = s.stock; });
+
+  // On ne bloque pas tout, mais on n'encaisse pas non plus automatiquement :
+  // le ticket est corrigé et on laisse la serveuse revoir/valider (le client peut vouloir changer de boisson).
+  const ajustements = [];
+  for (const id in panier) {
+    const dispo = stockMap[id];
+    if (dispo === undefined) continue;
+    if (panier[id] > dispo) {
+      const b = boissons.find(i => i.id == id);
+      const nom = b ? b.designation : (stockFrais.find(s=>s.id==id)?.designation || 'article');
+      if (dispo <= 0) { ajustements.push(`${nom} retiré (stock épuisé)`); delete panier[id]; }
+      else { ajustements.push(`${nom} réduit à ${dispo}`); panier[id] = dispo; }
+    }
+  }
+  if (ajustements.length > 0) {
+    if (Object.keys(panier).length === 0) {
+      toast('❌ Plus aucun article disponible dans ce ticket', 'error');
+      await initialiserApplication();
+      return;
+    }
+    toast('△  Ticket ajusté, vérifie avant de valider : ' + ajustements.join(' • '), 'warning');
+    rafrachirVueActive();
+    ouvrirModalVente(); // rouvre le récap avec le ticket corrigé, pour validation manuelle
+    const noteEl = document.getElementById('note-vente');
+    if (noteEl && note) noteEl.value = note; // on ne perd pas ce qui était déjà tapé
+    return;
+  }
+  if (Object.keys(panier).length === 0) {
+    toast('❌ Plus aucun article disponible dans ce ticket', 'error');
+    await initialiserApplication();
+    return;
+  }
+
+  let tv=0, tb=0; const arts=[];
+  for (const id in panier) {
+    const qte=panier[id], b=boissons.find(i=>i.id==id); if (!b) continue;
+    const qpc=b.quantite_par_cassier||(b.type_bouteille==="petit bouteille"?24:12);
+    const aU=b.pu_initial>0?Math.round(b.pu_initial/qpc):0;
+    tv+=b.prix_unitaire*qte; tb+=(b.prix_unitaire-aU)*qte;
+    arts.push({ id:b.id, designation:b.designation, quantite:qte, prix_unitaire:b.prix_unitaire, stockActuel: stockMap[id] ?? b.stock });
+  }
   try {
-    const { data, error } = await client.rpc('enregistrer_vente', {
-      p_bar_id: barActuel.id,
-      p_articles: articles,
-      p_serveuse: utilisateurActuel?.nom || null,
-      p_note: note || null
-    });
+    const { data: tr, error } = await client.from('ventes')
+      .insert([{ total:tv, benefice:tb, benef:tb, bar_id:barActuel.id, note: note || null, serveuse: utilisateurActuel?.nom || null }])
+      .select().single();
     if (error) throw error;
-    const resultat = Array.isArray(data) ? data[0] : data;
+    for (const art of arts) {
+      await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:art.designation, quantite:art.quantite, prix_unitaire:art.prix_unitaire, bar_id:barActuel.id }]);
+      const { data: nouveauStock, error: eStock } = await client.rpc('decrementer_stock_boisson', {
+        p_boisson_id: art.id, p_bar_id: barActuel.id, p_quantite: art.quantite
+      });
+      if (eStock) {
+        // Cas extrême : le stock a encore bougé entre la vérification et l'écriture.
+        toast(`❌ ${escape(art.designation)} non disponible au dernier moment, vente partielle enregistrée`, 'error');
+      } else {
+        const bb = boissons.find(i => i.id === art.id); if (bb) bb.stock = nouveauStock;
+      }
+    }
     const noteEl = document.getElementById('note-vente');
     if (noteEl) noteEl.value = '';
-    toast('✅ Vente enregistrée ! ' + formatPrix(resultat.total_vente));
-    panier = {};
+    toast('✅ Vente enregistrée ! '+formatPrix(tv)); panier={};
     await initialiserApplication();
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-    await initialiserApplication();
-  }
+  } catch (err) { toast('❌ Erreur vente : '+err.message,'error'); }
 }
+
 function annulerVente() {
   if (Object.keys(panier).length===0) return;
   if (!confirm("Vider le panier ?")) return;
@@ -1263,7 +1327,7 @@ async function ouvrirNouvelleCommande() {
   const table = document.getElementById('cmd-table')?.value.trim();
   const clientNom = document.getElementById('cmd-client')?.value.trim();
   if (!table) { toast('△  Indique un numéro de table', 'warning'); return; }
-  const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0 }]).select().single();
+  const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0, serveuse: utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null) }]).select().single();
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('cmd-table').value = '';
   document.getElementById('cmd-client').value = '';
@@ -1273,7 +1337,11 @@ async function ouvrirNouvelleCommande() {
 }
 
 async function chargerCommandes() {
-  const { data, error } = await client.from('commandes').select('*').eq('bar_id', barActuel.id).eq('statut', 'ouverte').order('created_at', { ascending: true });
+  let query = client.from('commandes').select('*').eq('bar_id', barActuel.id).eq('statut', 'ouverte').order('created_at', { ascending: true });
+  if (utilisateurActuel?.role !== 'gerant') {
+    query = query.eq('serveuse', utilisateurActuel?.nom || '');
+  }
+  const { data, error } = await query;
   if (error) { console.error(error); return; }
   commandesOuvertes = data || [];
   afficherCommandes();
@@ -1287,9 +1355,10 @@ function afficherCommandes() {
     const duree = dureeDepuis(cmd.created_at);
     const detail = articles.length > 0 ? articles.map(a => `${escape(a.designation)} x${a.qte}`).join(', ') : 'Aucun article';
     const label = cmd.client_nom ? `${escape(cmd.table_num)} — ${escape(cmd.client_nom)}` : escape(cmd.table_num);
+    const badgeServeuse = (utilisateurActuel?.role === 'gerant' && cmd.serveuse) ? `<span style="margin-left:8px;font-size:11px;background:#eef2ff;color:#3730a3;padding:2px 7px;border-radius:10px;">👤 ${escape(cmd.serveuse)}</span>` : '';
     return `<div class="carte-commande">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div><span style="font-weight:700;font-size:15px;">${label}</span><span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
+        <div><span style="font-weight:700;font-size:15px;">${label}</span>${badgeServeuse}<span style="margin-left:10px;font-size:12px;" class="txt-secondaire">⏱️ ${duree}</span></div>
         <span style="font-weight:700;color:#1a6b3a;font-size:15px;">${formatPrix(cmd.total)}</span>
       </div>
       <div style="font-size:13px;margin-bottom:10px;" class="txt-secondaire">${detail}</div>
@@ -1339,27 +1408,12 @@ function afficherBoissonsCommande(recherche) {
   const fil = boissons.filter(b => b.stock > 0 && b.designation.toLowerCase().includes(terme)) .sort((a,b) => a.designation.localeCompare(b.designation));   // ← tri alphabétique;
   
   if (fil.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;">Aucune boisson disponible</div>'; return; }
-  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${escape(b.designation)}</div><div style="color:#1a6b3a;">${formatPrix(b.prix_unitaire)}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
+  div.innerHTML = fil.map(b => `<button onclick="ajouterArticleCommande(${b.id})" class="btn-choix-boisson"><div style="font-weight:600;">${escape(b.designation)}</div><div style="${b.prix_unitaire>0?'color:#1a6b3a;':'color:#ef6c00;font-style:italic;'}">${b.prix_unitaire>0?formatPrix(b.prix_unitaire):'Prix à définir'}</div><div style="color:#888;">Stock: ${b.stock}</div></button>`).join('');
 }
 
 // ==================== COMMANDES (CORRIGÉ) ====================
 
-
-// Écritures différées vers Supabase (évite un appel réseau par clic)
-const syncStockTimers = {};
-function planifierSyncStock(boissonId) {
-  clearTimeout(syncStockTimers[boissonId]);
-  syncStockTimers[boissonId] = setTimeout(async () => {
-    const b = boissons.find(i => i.id === boissonId);
-    if (!b) return;
-    const { error } = await client.from('boissons')
-      .update({ stock: b.stock })
-      .eq('id', boissonId).eq('bar_id', barActuel.id);
-    if (error) toast('❌ Sync stock : ' + error.message, 'error');
-  }, 500); // écrit 0.5s après le dernier clic sur ce produit
-}
-
-function ajouterArticleCommande(id) {
+async function ajouterArticleCommande(id) {
   if (!commandeActive) return;
   const b = boissons.find(i => i.id === id);
   if (!b) return;
@@ -1369,8 +1423,25 @@ function ajouterArticleCommande(id) {
     return;
   }
 
-  // Mise à jour locale immédiate — chaque clic compte, aucun n'est perdu
-  b.stock -= 1;
+  if (!(b.prix_unitaire > 0)) {
+    alert(`❌ Fixe d'abord le prix de ${escape(b.designation)}.`);
+    return;
+  }
+
+  // Décrément atomique côté serveur : vérifie le VRAI stock au moment du clic,
+  // même si une autre serveuse est en train de faire la même chose ailleurs.
+  const { data: nouveauStock, error } = await client.rpc('decrementer_stock_boisson', {
+    p_boisson_id: id, p_bar_id: barActuel.id, p_quantite: 1
+  });
+  if (error) {
+    toast(`❌ Stock insuffisant pour ${escape(b.designation)} (pris entre-temps par une autre commande)`, 'error');
+    const { data: frais } = await client.from('boissons').select('stock').eq('id', id).eq('bar_id', barActuel.id).single();
+    if (frais) b.stock = frais.stock;
+    afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+    return;
+  }
+
+  b.stock = nouveauStock;
 
   const articles = commandeActive.articles || [];
   const existe = articles.find(a => a.id === id);
@@ -1382,18 +1453,21 @@ function ajouterArticleCommande(id) {
 
   afficherArticlesCommande();
   afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
-
-  planifierSyncStock(id); // écriture DB différée, non bloquante
 }
 
-function retirerArticleCommande(index) {
+async function retirerArticleCommande(index) {
   if (!commandeActive) return;
   const articles = commandeActive.articles || [];
   const article = articles[index];
   if (!article) return;
 
   const b = boissons.find(i => i.id === article.id);
-  if (b) b.stock += 1;
+  if (b) {
+    const { data: nouveauStock, error } = await client.rpc('incrementer_stock_boisson', {
+      p_boisson_id: article.id, p_bar_id: barActuel.id, p_quantite: 1
+    });
+    if (!error && nouveauStock != null) b.stock = nouveauStock; else b.stock += 1;
+  }
 
   if (article.qte > 1) { article.qte -= 1; }
   else { articles.splice(index, 1); }
@@ -1402,8 +1476,6 @@ function retirerArticleCommande(index) {
 
   afficherArticlesCommande();
   afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
-
-  if (b) planifierSyncStock(article.id);
 }
 async function sauvegarderCommande() {
   if (!commandeActive) return;
@@ -1485,15 +1557,16 @@ async function encaisserCommande() {
 async function annulerCommande(id) {
   if (!confirm('Annuler cette commande ?')) return;
 
-  // Récupérer la commande pour remettre le stock
+  // Récupérer la commande pour remettre le stock (incrément atomique)
   const cmd = commandesOuvertes.find(c => c.id === id);
   if (cmd && cmd.articles && cmd.articles.length > 0) {
     for (const a of cmd.articles) {
-      const b = boissons.find(i => i.id === a.id);
-      if (b) {
-        await client.from('boissons')
-          .update({ stock: b.stock + a.qte })
-          .eq('id', a.id).eq('bar_id', barActuel.id);
+      const { data: nouveauStock, error } = await client.rpc('incrementer_stock_boisson', {
+        p_boisson_id: a.id, p_bar_id: barActuel.id, p_quantite: a.qte
+      });
+      if (!error && nouveauStock != null) {
+        const b = boissons.find(i => i.id === a.id);
+        if (b) b.stock = nouveauStock;
       }
     }
   }
@@ -1641,6 +1714,11 @@ async function afficherChoixServeuse() {
 let serveuseSelectionnee = null;
 function selectionnerServeuse(id, nom) {
   serveuseSelectionnee = { id, nom };
+  document.querySelectorAll('.btn-choix-serveuse').forEach(b => {
+    b.classList.toggle('selectionnee', parseInt(b.dataset.id) === id);
+  });
+  const titre = document.getElementById('titre-pin-serveuse');
+  if (titre) titre.textContent = `🔒 Mot de passe de ${nom}`;
   document.getElementById('panel-pin-serveuse').style.display = 'block';
   setTimeout(() => document.getElementById('input-pin-serveuse')?.focus(), 100);
 }
@@ -1671,6 +1749,10 @@ function lancerApplicationAvecRole() {
   appliquerRestrictions();
   activerRealtime();
   demarrerSurveillanceInactivite();
+  const estGerantMsg = utilisateurActuel?.role === 'gerant';
+  const heure = new Date().getHours();
+  const salut = heure < 12 ? 'Bonjour' : (heure < 18 ? 'Bon après-midi' : 'Bonsoir');
+  toast(`👋 ${salut}, ${estGerantMsg ? 'Gérant' : utilisateurActuel.nom} ! Bienvenue sur BarStock.`);
   initialiserApplication().then(() => {
     const estGerant = utilisateurActuel?.role === 'gerant';
     if (estGerant) { showSection('catalogue'); } else { showSection('ventes'); }
@@ -1850,7 +1932,19 @@ async function changerMotDePasse() {
   }
 }
 
+async function changerPinGerant() {
+  const pin = (document.getElementById('profil-pin')?.value || '').trim();
+  if (!pin || pin.length < 4) { afficherMessageProfil('PIN trop court (minimum 4 chiffres).', false); return; }
 
+  try {
+    const { error } = await client.rpc('changer_pin_gerant', { p_bar_id: barActuel.id, p_nouveau_pin: pin });
+    if (error) throw error;
+    document.getElementById('profil-pin').value = '';
+    afficherMessageProfil('✅ PIN Gérant mis à jour !');
+  } catch (err) {
+    afficherMessageProfil('❌ Erreur : ' + err.message, false);
+  }
+}
 async function changerMotDePasseAdmin() {
   const actuel = prompt('Mot de passe actuel (obligatoire) :');
   if (!actuel) return;

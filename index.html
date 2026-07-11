@@ -77,11 +77,8 @@
         </div>
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:13px; font-weight:600; color:#555;">Mot de passe</label>
-          <div class="pw-wrap">
-            <input type="password" id="new-bar-password" placeholder="Min. 8 caractères, avec majuscule, minuscule et chiffre"
-              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px; box-sizing:border-box;">
-            <button class="pw-eye" type="button" onclick="toggleVoirPin('new-bar-password')" aria-label="Afficher ou masquer le mot de passe"></button>
-          </div>
+          <input type="password" id="new-bar-password" placeholder="Min. 8 caractères, avec majuscule, minuscule et chiffre"
+            style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
         </div>
         <button id="btn-creer-bar" onclick="creerBar()"
           style="background:#1a6b3a; color:white; border:none; padding:11px 20px; border-radius:8px; cursor:pointer; font-weight:700; font-size:14px; white-space:nowrap;">
@@ -143,13 +140,10 @@
 
   <!-- Connexion gérant (PIN) -->
   <div id="panel-gerant" style="display:none; background:white; border-radius:12px; padding:24px; width:300px;">
-    <div style="font-weight:700; margin-bottom:12px;">🔐 Code PIN Gérant</div>
-    <div class="pw-wrap">
-      <input type="password" id="input-pin-gerant" placeholder="Code PIN"
-        style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:18px; text-align:center; letter-spacing:4px; box-sizing:border-box;"
-        maxlength="6" onkeydown="if(event.key==='Enter') validerPinGerant()">
-      <button class="pw-eye" type="button" onclick="toggleVoirPin('input-pin-gerant')" aria-label="Afficher ou masquer le PIN"></button>
-    </div>
+    <div style="font-weight:700; margin-bottom:12px;">🔐 Connexion Gérant</div>
+    <input type="password" id="input-pin-gerant" placeholder="Mot de passe"
+      style="width:100%; padding:14px; border:1px solid #ddd; border-radius:6px; font-size:20px; text-align:center; letter-spacing:3px; box-sizing:border-box;"
+      maxlength="20" onkeydown="if(event.key==='Enter') validerPinGerant()">
     <button onclick="validerPinGerant()"
       style="width:100%; margin-top:10px; background:#1a6b3a; color:white; border:none; padding:10px; border-radius:6px; font-weight:700; cursor:pointer;">
       Entrer
@@ -162,12 +156,10 @@
     <div style="font-weight:700; margin-bottom:12px;">👤 Qui êtes-vous ?</div>
     <div id="liste-serveuses" style="display:flex; flex-direction:column; gap:8px;"></div>
     <div id="panel-pin-serveuse" style="display:none; margin-top:12px;">
-      <div class="pw-wrap">
-        <input type="password" id="input-pin-serveuse" placeholder="Votre code PIN"
-          style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:18px; text-align:center; letter-spacing:4px; box-sizing:border-box;"
-          maxlength="6" onkeydown="if(event.key==='Enter') validerPinServeuse()">
-        <button class="pw-eye" type="button" onclick="toggleVoirPin('input-pin-serveuse')" aria-label="Afficher ou masquer le PIN"></button>
-      </div>
+      <div id="titre-pin-serveuse" style="font-weight:600; font-size:14px; margin-bottom:8px; color:#1a6b3a;"></div>
+      <input type="password" id="input-pin-serveuse" placeholder="Votre mot de passe"
+        style="width:100%; padding:14px; border:1px solid #ddd; border-radius:6px; font-size:20px; text-align:center; letter-spacing:3px; box-sizing:border-box;"
+        maxlength="20" onkeydown="if(event.key==='Enter') validerPinServeuse()">
       <button onclick="validerPinServeuse()"
         style="width:100%; margin-top:8px; background:#1a6b3a; color:white; border:none; padding:10px; border-radius:6px; font-weight:700; cursor:pointer;">
         Entrer
@@ -501,11 +493,8 @@
             <input type="text" id="srv-nom" placeholder="Ex: Marie" style="padding:9px; border:1px solid #ddd; border-radius:6px;">
           </div>
           <div style="display:flex; flex-direction:column; gap:5px;">
-            <label style="font-size:13px; font-weight:600;">Code PIN (4-6 chiffres)</label>
-            <div class="pw-wrap">
-              <input type="password" id="srv-pin" placeholder="Ex: 1234" maxlength="6" style="padding:9px; border:1px solid #ddd; border-radius:6px; width:100%; box-sizing:border-box;">
-              <button class="pw-eye" type="button" onclick="toggleVoirPin('srv-pin')" aria-label="Afficher ou masquer le PIN"></button>
-            </div>
+            <label style="font-size:13px; font-weight:600;">Mot de passe (min. 6-8 caractères, lettres+chiffres conseillé)</label>
+            <input type="password" id="srv-pin" placeholder="Ex: Marie2024" maxlength="20" style="padding:12px; border:1px solid #ddd; border-radius:6px; font-size:15px;">
           </div>
           <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
         </div>
@@ -600,6 +589,21 @@
           </div>
         </div>
 
+        <!-- PIN Gérant -->
+        <div style="margin-bottom:8px;">
+          <h4 style="margin:0 0 12px; color:#0f3d22; border-bottom:1px solid #eee; padding-bottom:8px;">🔐 Mot de passe Gérant</h4>
+          <div style="display:flex; gap:10px; align-items:flex-end;">
+            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
+              <label style="font-size:13px; font-weight:600; color:#555;">Nouveau mot de passe (min. 6-8 caractères conseillé)</label>
+              <input type="password" id="profil-pin" placeholder="Ex: Bar2024" maxlength="20"
+                style="padding:12px; border:1px solid #ddd; border-radius:8px; font-size:17px; letter-spacing:1px; width:220px; box-sizing:border-box;">
+            </div>
+            <button onclick="changerPinGerant()"
+              style="background:#d4a017; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700; white-space:nowrap;">
+              💾 Enregistrer
+            </button>
+          </div>
+        </div>
 
         <div id="profil-message" style="display:none; margin-top:14px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600;"></div>
       </div>
