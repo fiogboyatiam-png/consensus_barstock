@@ -64,7 +64,7 @@
     <!-- Formulaire création bar -->
     <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid #1a6b3a;">
       <h3 style="margin:0 0 16px; color:#0f3d22;">➕ Créer un nouveau bar</h3>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr auto; gap:12px; align-items:end;">
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:13px; font-weight:600; color:#555;">Nom du bar</label>
           <input type="text" id="new-bar-nom" placeholder="Ex: Bar Le Sunset"
@@ -73,6 +73,11 @@
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:13px; font-weight:600; color:#555;">Email du gérant</label>
           <input type="email" id="new-bar-email" placeholder="gerant@bar.com"
+            style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <label style="font-size:13px; font-weight:600; color:#555;">Téléphone du gérant</label>
+          <input type="tel" id="new-bar-telephone" placeholder="Ex: +228 90 00 00 00"
             style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
         </div>
         <div style="display:flex; flex-direction:column; gap:5px;">
@@ -92,10 +97,16 @@
     <div style="background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
-        <button onclick="chargerTableauAdmin()"
-          style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
-          🔄 Actualiser
-        </button>
+        <div style="display:flex; gap:10px;">
+          <button onclick="supprimerTousLesBars()"
+            style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
+            ⚠️ Supprimer tous les bars
+          </button>
+          <button onclick="chargerTableauAdmin()"
+            style="background:#e8f5e9; color:#1a6b3a; border:1px solid #a5d6a7; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
+            🔄 Actualiser
+          </button>
+        </div>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse;">
@@ -107,11 +118,12 @@
               <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">PIN Gérant</th>
               <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Serveuses & PINs</th>
               <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Statut</th>
+              <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Paiement</th>
               <th style="padding:12px 14px; text-align:left; font-size:12px; text-transform:uppercase; color:#64748b;">Action</th>
             </tr>
           </thead>
           <tbody id="admin-tbody">
-            <tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>
+            <tr><td colspan="8" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>
           </tbody>
         </table>
       </div>

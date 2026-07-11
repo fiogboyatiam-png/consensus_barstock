@@ -240,36 +240,20 @@ async function traiterFileAttente() {
   let nbOk = 0, nbConflits = 0;
   const restantes = [];
 
-  for (const venteOff of file) {
+ for (const venteOff of file) {
     try {
-      let noteFinale = venteOff.note || null;
-      const conflitsVente = [];
-
-      const { data: tr, error: eV } = await client.from('ventes')
-        .insert([{ total: venteOff.total, benefice: venteOff.benef, benef: venteOff.benef,
-          bar_id: barActuel.id, note: noteFinale, serveuse: venteOff.serveuse }])
-        .select().single();
-      if (eV) throw eV;
-
-      for (const art of venteOff.articles) {
-        await client.from('vente_articles').insert([{
-          vente_id: tr.id, boisson_designation: art.designation,
-          quantite: art.quantite, prix_unitaire: art.prix_unitaire, bar_id: barActuel.id
-        }]);
-        const { data: res, error: eStock } = await client.rpc('decrementer_stock_boisson_force', {
-          p_boisson_id: art.id, p_bar_id: barActuel.id, p_quantite: art.quantite
-        });
-        if (!eStock && res && res[0]?.conflit) conflitsVente.push(art.designation);
-      }
-
-      if (conflitsVente.length > 0) {
-        nbConflits++;
-        const noteConflit = `⚠️ CONFLIT STOCK (vente hors-ligne) : ${conflitsVente.join(', ')} — stock insuffisant au moment de la synchro, à vérifier.`;
-        await client.from('ventes').update({ note: [noteFinale, noteConflit].filter(Boolean).join(' | ') }).eq('id', tr.id);
-      }
+      const articles = venteOff.articles.map(a => ({ id: a.id, quantite: a.quantite }));
+      const { data, error } = await client.rpc('synchroniser_vente_offline', {
+        p_bar_id: barActuel.id,
+        p_articles: articles,
+        p_serveuse: venteOff.serveuse,
+        p_note: venteOff.note || null
+      });
+      if (error) throw error;
+      const res = Array.isArray(data) ? data[0] : data;
+      if (res.conflits && res.conflits.length > 0) nbConflits++;
       nbOk++;
     } catch (err) {
-      // On garde la vente en file pour réessayer plus tard (ex: coupure réseau pendant la synchro elle-même)
       restantes.push(venteOff);
     }
   }
@@ -344,19 +328,15 @@ async function synchroniserUneCommandeEnAttente(entry) {
       if (error) throw error;
       entry.id = data.id;
     }
-    let noteFinale = entry.note || null;
-    if (conflits.length > 0) {
-      noteFinale = [noteFinale, `⚠️ CONFLIT STOCK (commande hors-ligne) : ${conflits.join(', ')} — à vérifier.`].filter(Boolean).join(' | ');
-    }
-    const { data: vente, error: eV } = await client.from('ventes').insert([{
-      bar_id: barActuel.id, total: entry.total, benefice: entry.benef || 0, benef: entry.benef || 0,
-      note: noteFinale, serveuse: entry.serveuse
-    }]).select().single();
-    if (eV) throw eV;
-    for (const a of entry.articles || []) {
-      await client.from('vente_articles').insert([{ vente_id: vente.id, bar_id: barActuel.id, boisson_designation: a.designation, quantite: a.qte, prix_unitaire: a.prix }]);
-    }
-    await client.from('commandes').update({ statut: 'payee' }).eq('id', entry.id);
+    // S'assurer que le serveur a le dernier état des articles avant d'encaisser
+    await client.from('commandes').update({ articles: entry.articles, total: entry.total, note: entry.note || null }).eq('id', entry.id);
+
+    const { error: eEnc } = await client.rpc('encaisser_commande', {
+      p_commande_id: entry.id,
+      p_serveuse: entry.serveuse
+    });
+    if (eEnc) throw eEnc;
+
     return { conflits: conflits.length };
   }
   return { conflits: 0 };
@@ -445,12 +425,7 @@ async function seConnecter() {
     if (error) throw error;
 
     // Vérification admin via config plutôt qu'UUID hardcodé
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -487,12 +462,7 @@ async function restaurerSession() {
     if (!session) { afficherEcranAuth(); return; }
 
     // Vérification admin via config
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(session.user.id) || session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -529,7 +499,7 @@ async function afficherInterfaceAdmin() {
   document.getElementById('ecran-admin').style.display = 'block';
 
   const tbody = document.getElementById('admin-tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#aaa;">Chargement...</td></tr>';
 
   try {
     const { data: { session } } = await client.auth.getSession();
@@ -544,7 +514,7 @@ async function afficherInterfaceAdmin() {
     if (errBars) { alert('Erreur : ' + errBars); return; }
 
     if (!bars || bars.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="admin-vide">Aucun bar enregistré.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="admin-vide">Aucun bar enregistré.</td></tr>';
       return;
     }
 
@@ -554,6 +524,7 @@ async function afficherInterfaceAdmin() {
       const statutTxt = b.actif ? 'Actif' : 'Désactivé';
 
       const email = b.email || '—';
+      const telephone = b.telephone || '—';
 
       const pinGerant = b.pin_gerant
         ? '<span style="color:#2e7d32;">✅ Défini</span>'
@@ -566,16 +537,43 @@ async function afficherInterfaceAdmin() {
             `<div style="font-size:12px;">👤 ${escape(s.nom)} — <span style="color:#888;">PIN protégé</span></div>`
           ).join('');
 
+      // Calcul du statut de paiement
+      let paiementHtml = '<span style="color:#aaa;">Non défini</span>';
+      if (b.prochain_paiement) {
+        const dateP = new Date(b.prochain_paiement + 'T00:00:00');
+        const aujourd = new Date(); aujourd.setHours(0,0,0,0);
+        const joursRestants = Math.round((dateP - aujourd) / 86400000);
+        const dateAff = dateP.toLocaleDateString('fr-FR');
+        if (joursRestants < 0) {
+          paiementHtml = `<span style="color:#c62828;font-weight:700;">🔴 En retard (${dateAff})</span>`;
+        } else if (joursRestants <= 7) {
+          paiementHtml = `<span style="color:#ef6c00;font-weight:700;">🟠 Dans ${joursRestants}j (${dateAff})</span>`;
+        } else {
+          paiementHtml = `<span style="color:#2e7d32;">🟢 ${dateAff}</span>`;
+        }
+      }
+
       return `<tr>
         <td><strong>${escape(b.nom)}</strong></td>
-        <td style="font-size:13px;color:#555;">${escape(email)}</td>
+        <td style="font-size:13px;color:#555;">${escape(email)}<br><span style="color:#888;">📞 ${escape(telephone)}</span></td>
         <td>${date}</td>
         <td>${pinGerant}</td>
         <td>${serveusesHtml}</td>
         <td><span class="admin-statut ${statutClasse}">${statutTxt}</span></td>
-        <td><button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
+        <td style="font-size:13px;">
+          ${paiementHtml}<br>
+          <button onclick="definirProchainPaiement('${b.id}', '${b.prochain_paiement || ''}')"
+    style="margin-top:4px;background:#f5f5f5;color:#555;border:1px solid #ddd;padding:3px 10px;border-radius:14px;font-size:11px;cursor:pointer;">📅 Modifier</button>
+        </td>
+        <td style="display:flex;flex-direction:column;gap:6px;">
+          <button data-bar-id="${b.id}" data-bar-actif="${b.actif}" 
     style="background:${b.actif ? '#ffebee' : '#e8f5e9'};color:${b.actif ? '#c62828' : '#2e7d32'};border:1px solid ${b.actif ? '#ef9a9a' : '#a5d6a7'};padding:8px 16px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;"
-    class="btn-toggle-bar">${b.actif ? '◍ Désactiver' : '🟢 Activer'}</button></td>
+    class="btn-toggle-bar">${b.actif ? '◍ Désactiver' : '🟢 Activer'}</button>
+          ${email !== '—' ? `<button onclick="reinitialiserMotDePasseBar('${escape(email)}')"
+    style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">🔑 Réinitialiser mot de passe</button>` : ''}
+          <button onclick="supprimerUnBar('${b.id}', '${escape(b.nom)}')"
+    style="background:#ffebee;color:#c62828;border:1px solid #ef9a9a;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;">🗑️ Supprimer</button>
+        </td>
       </tr>`;
     }).join('');
 
@@ -602,7 +600,7 @@ async function afficherInterfaceAdmin() {
       });
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="admin-vide">❌ Erreur : ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="admin-vide">❌ Erreur : ${err.message}</td></tr>`;
   }
 }
 
@@ -615,6 +613,7 @@ async function chargerTableauAdmin() {
 async function creerBar() {
   const nom = (document.getElementById('new-bar-nom')?.value || '').trim();
   const email = (document.getElementById('new-bar-email')?.value || '').trim();
+  const telephone = (document.getElementById('new-bar-telephone')?.value || '').trim();
   const password = (document.getElementById('new-bar-password')?.value || '').trim();
 
   if (!nom) { afficherErreurAdmin('Le nom du bar est obligatoire.'); return; }
@@ -640,12 +639,14 @@ async function creerBar() {
     const { data: barId, error: rpcError } = await client.rpc('creer_bar_complet', {
       p_nom: nom,
       p_email: email,
-      p_owner_id: authData.user.id
+      p_owner_id: authData.user.id,
+      p_telephone: telephone || null
     });
     if (rpcError) throw rpcError;
 
     document.getElementById('new-bar-nom').value = '';
     document.getElementById('new-bar-email').value = '';
+    document.getElementById('new-bar-telephone').value = '';
     document.getElementById('new-bar-password').value = '';
     document.getElementById('admin-erreur').style.display = 'none';
 
@@ -656,6 +657,111 @@ async function creerBar() {
     afficherErreurAdmin('Erreur lors de la création. Vérifiez les informations et réessayez.');
   } finally {
     if (btn) { btn.disabled = false; btn.innerText = '➕ Créer le bar'; }
+  }
+}
+
+// Réinitialise directement le mot de passe d'un bar via l'API admin de Supabase
+// (fiable, contrairement à la méthode SQL manuelle qui pouvait ne pas fonctionner).
+async function reinitialiserMotDePasseBar(email) {
+  if (!confirm(`Réinitialiser le mot de passe de ${email} ?\nUn nouveau mot de passe temporaire sera généré.`)) return;
+
+  const tempPass = 'Temp' + Math.floor(1000 + Math.random() * 9000) + '!';
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
+
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-password', email, password: tempPass })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    alert(`✅ Mot de passe réinitialisé avec succès !\n\nNouveau mot de passe temporaire à donner au bar :\n${tempPass}\n\nDis-lui de le changer dès sa prochaine connexion (dans son Profil).`);
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
+  }
+}
+
+// Définit ou modifie la date de prochain paiement d'un bar
+async function definirProchainPaiement(barId, dateActuelle) {
+  const saisie = prompt('Date du prochain paiement (format AAAA-MM-JJ) :', dateActuelle || '');
+  if (saisie === null) return;
+  if (saisie !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(saisie)) {
+    alert('❌ Format invalide. Utilise AAAA-MM-JJ, ex : 2026-08-15');
+    return;
+  }
+  try {
+    const { error } = await client.from('bars').update({ prochain_paiement: saisie || null }).eq('id', barId);
+    if (error) throw error;
+    toast('✅ Date de paiement mise à jour');
+    await afficherInterfaceAdmin();
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
+  }
+}
+
+// Supprime un seul bar (ses données + son compte de connexion). Irréversible.
+async function supprimerUnBar(barId, nomBar) {
+  if (!confirm(`⚠️ Supprimer DÉFINITIVEMENT le bar "${nomBar}" ?\n\nSes boissons, ventes, commandes et serveuses seront aussi supprimées, ainsi que son compte de connexion.\n\nCette action est irréversible.`)) return;
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
+
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-one-bar', bar_id: barId })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    toast(`✅ "${nomBar}" supprimé.`);
+    await afficherInterfaceAdmin();
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
+  }
+}
+
+// ⚠️ Supprime TOUS les bars, leurs données, et leurs comptes de connexion.
+// Ne touche jamais au compte super-admin. Action irréversible — double confirmation.
+async function supprimerTousLesBars() {
+  if (!confirm('⚠️ ATTENTION : ceci va supprimer DÉFINITIVEMENT tous les bars, leurs boissons, ventes, commandes, serveuses et leurs comptes de connexion.\n\nSeul ton compte admin sera conservé.\n\nContinuer ?')) return;
+
+  const saisie = prompt('Pour confirmer cette action IRRÉVERSIBLE, tape exactement : SUPPRIMER');
+  if (saisie !== 'SUPPRIMER') { toast('Suppression annulée.', 'warning'); return; }
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
+
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete-all-bars' })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    toast(`✅ ${result.count} bar(s) supprimé(s) avec succès.`);
+    await afficherInterfaceAdmin();
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
   }
 }
 
@@ -1896,33 +2002,21 @@ async function encaisserCommande() {
     return;
   }
 
-  // Sauvegarder d'abord
+// Sauvegarder d'abord l'état actuel des articles
   await client.from('commandes')
     .update({ articles: cmdArticles, total: cmd.total, note: note || label })
     .eq('id', cmdId);
 
   try {
-    // Enregistrer la vente
-    const { data: vente, error: eV } = await client.from('ventes')
-      .insert([{ bar_id: barActuel.id, total, benefice: benef, benef,
-        note: note || label, serveuse: utilisateurActuel?.nom || null }])
-      .select().single();
-    if (eV) throw eV;
-
-    // Enregistrer les articles — stock déjà décompté à l'ajout
-    for (const a of cmdArticles) {
-      await client.from('vente_articles').insert([{
-        vente_id: vente.id, bar_id: barActuel.id,
-        boisson_designation: a.designation,
-        quantite: a.qte, prix_unitaire: a.prix
-      }]);
-    }
-
-    // Fermer la commande
-    await client.from('commandes').update({ statut: 'payee' }).eq('id', cmdId);
+    const { data, error } = await client.rpc('encaisser_commande', {
+      p_commande_id: cmdId,
+      p_serveuse: utilisateurActuel?.nom || null
+    });
+    if (error) throw error;
+    const resultat = Array.isArray(data) ? data[0] : data;
 
     fermerModalCommande();
-    toast('✅ Commande encaissée — ' + formatPrix(total));
+    toast('✅ Commande encaissée — ' + formatPrix(resultat.total_vente));
     await initialiserApplication();
     await chargerCommandes();
 
