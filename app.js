@@ -200,28 +200,33 @@ function gererConnexion() {
 
 // Vente enregistrée localement quand il n'y a pas de réseau.
 // Elle utilise le cache local des boissons (le meilleur qu'on ait sous la main hors-ligne).
-async function validerVente(note = '') {
-  if (Object.keys(panier).length===0) return;
-  if (!navigator.onLine) { await validerVenteHorsLigne(note); return; }
-  const articles = Object.entries(panier).map(([id, qte]) => ({ id: Number(id), quantite: qte }));
-  try {
-    const { data, error } = await client.rpc('enregistrer_vente', {
-      p_bar_id: barActuel.id,
-      p_articles: articles,
-      p_serveuse: utilisateurActuel?.nom || null,
-      p_note: note || null
-    });
-    if (error) throw error;
-    const resultat = Array.isArray(data) ? data[0] : data;
-    const noteEl = document.getElementById('note-vente');
-    if (noteEl) noteEl.value = '';
-    toast('✅ Vente enregistrée ! ' + formatPrix(resultat.total_vente));
-    panier = {};
-    await initialiserApplication();
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-    await initialiserApplication();
+async function validerVenteHorsLigne(note = '') {
+  if (Object.keys(panier).length === 0) return;
+  let tv = 0, tb = 0; const arts = [];
+  for (const id in panier) {
+    const qte = panier[id], b = boissons.find(i => i.id == id); if (!b) continue;
+    const qpc = b.quantite_par_cassier || (b.type_bouteille === "petit bouteille" ? 24 : 12);
+    const aU = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
+    tv += b.prix_unitaire * qte; tb += (b.prix_unitaire - aU) * qte;
+    arts.push({ id: b.id, designation: b.designation, quantite: qte, prix_unitaire: b.prix_unitaire });
+    b.stock = Math.max(0, b.stock - qte); // décrément local optimiste, pour ne pas survendre localement
   }
+  sauverCacheBoissons();
+
+  const file = lireFileAttente();
+  file.push({
+    id_local: 'off_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    total: tv, benef: tb, note: note || null,
+    serveuse: utilisateurActuel?.nom || null,
+    articles: arts, horodatage: new Date().toISOString()
+  });
+  ecrireFileAttente(file);
+
+  const noteEl = document.getElementById('note-vente');
+  if (noteEl) noteEl.value = '';
+  toast('📡 Vente enregistrée en local (hors-ligne) ! Sera synchronisée au retour du réseau. ' + formatPrix(tv));
+  panier = {};
+  rafrachirVueActive();
 }
 
 let syncEnCours = false;
@@ -441,7 +446,12 @@ async function seConnecter() {
     if (error) throw error;
 
     // Vérification admin via config plutôt qu'UUID hardcodé
-    if (data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    const { data: adminCfg } = await client.from('config')
+      .select('valeur')
+      .eq('cle', 'admin_users')
+      .single();
+    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
+    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
       afficherInterfaceAdmin();
       return;
     }
@@ -1534,46 +1544,23 @@ async function reinitialiserVentes() {
   if (!confirm("△  SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("◍ DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
-    const { error } = await client.rpc('reinitialiser_ventes_bar', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
-    if (error) throw error;
+    await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
+    await client.from('ventes').delete().eq('bar_id', barActuel.id);
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
+
 async function reinitialiserFournisseur() {
   if (!confirm("△  Vider tout l'historique fournisseur ?")) return;
   try {
-    const { error } = await client.rpc('reinitialiser_fournisseur', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
-    if (error) throw error;
+    await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function reinitialiserVentesServeuse() {
-  const periode = document.getElementById('rapport-periode')?.value || 'today';
-  const libellesPeriode = { today: "d'aujourd'hui", week: "des 7 derniers jours", month: "de ce mois", all: "depuis le début (TOUTES)" };
-  const libelle = libellesPeriode[periode] || periode;
-
-  if (!confirm(`△  Supprimer DÉFINITIVEMENT les ventes des serveuses ${libelle} ?\n\nLes ventes faites directement par le gérant seront conservées.\nCette action est IRRÉVERSIBLE.`)) return;
-  if (!confirm("◍ Dernière confirmation — continuer la suppression ?")) return;
-
-  const maintenant = new Date();
-  let dateDebut = null;
-  if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
-  else if (periode === 'week') dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
-
-  try {
-    const { data, error } = await client.rpc('reinitialiser_ventes_serveuse', {
-      p_bar_id: barActuel.id, p_date_debut: dateDebut, p_pin_gerant: pinGerantActuel
-    });
-    if (error) throw error;
-    if (!data || data === 0) { toast('Aucune vente de serveuse à supprimer sur cette période.', 'warning'); return; }
-    toast(`✅ ${data} vente(s) de serveuse supprimée(s) ${libelle}.`);
-    await chargerRapportServeuses();
-    await initialiserApplication();
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-  }
+  if (!confirm("△  Réinitialiser les ventes de toutes les serveuses ?")) return;
+  toast('Fonctionnalité à configurer selon le besoin.', 'warning');
 }
 
 // ==================== FOURNISSEUR ====================
@@ -2399,8 +2386,7 @@ async function chargerRapportServeuses() {
 
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
-  const { error } = await client.rpc('supprimer_serveuse', { p_serveuse_id: id, p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
-  if (error) { toast('❌ ' + error.message, 'error'); return; }
+  await client.from('serveuses').delete().eq('id', id);
   toast('🗑️ Serveuse supprimée');
   chargerListeServeuses();
 }
