@@ -1554,8 +1554,31 @@ async function reinitialiserFournisseur() {
 }
 
 async function reinitialiserVentesServeuse() {
-  if (!confirm("△  Réinitialiser les ventes de toutes les serveuses ?")) return;
-  toast('Fonctionnalité à configurer selon le besoin.', 'warning');
+  const periode = document.getElementById('rapport-periode')?.value || 'today';
+  const libellesPeriode = { today: "d'aujourd'hui", week: "des 7 derniers jours", month: "de ce mois", all: "depuis le début (TOUTES)" };
+  const libelle = libellesPeriode[periode] || periode;
+
+  if (!confirm(`△  Supprimer DÉFINITIVEMENT les ventes des serveuses ${libelle} ?\n\nLes ventes faites directement par le gérant seront conservées.\nCette action est IRRÉVERSIBLE.`)) return;
+  if (!confirm("◍ Dernière confirmation — continuer la suppression ?")) return;
+
+  const maintenant = new Date();
+  let dateDebut = null;
+  if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
+  else if (periode === 'week') dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
+
+  try {
+    const { data, error } = await client.rpc('reinitialiser_ventes_serveuse', {
+      p_bar_id: barActuel.id, p_date_debut: dateDebut, p_pin_gerant: pinGerantActuel
+    });
+    if (error) throw error;
+    if (!data || data === 0) { toast('Aucune vente de serveuse à supprimer sur cette période.', 'warning'); return; }
+    toast(`✅ ${data} vente(s) de serveuse supprimée(s) ${libelle}.`);
+    await chargerRapportServeuses();
+    await initialiserApplication();
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
+  }
 }
 
 // ==================== FOURNISSEUR ====================
