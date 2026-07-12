@@ -200,33 +200,28 @@ function gererConnexion() {
 
 // Vente enregistrée localement quand il n'y a pas de réseau.
 // Elle utilise le cache local des boissons (le meilleur qu'on ait sous la main hors-ligne).
-async function validerVenteHorsLigne(note = '') {
-  if (Object.keys(panier).length === 0) return;
-  let tv = 0, tb = 0; const arts = [];
-  for (const id in panier) {
-    const qte = panier[id], b = boissons.find(i => i.id == id); if (!b) continue;
-    const qpc = b.quantite_par_cassier || (b.type_bouteille === "petit bouteille" ? 24 : 12);
-    const aU = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
-    tv += b.prix_unitaire * qte; tb += (b.prix_unitaire - aU) * qte;
-    arts.push({ id: b.id, designation: b.designation, quantite: qte, prix_unitaire: b.prix_unitaire });
-    b.stock = Math.max(0, b.stock - qte); // décrément local optimiste, pour ne pas survendre localement
+async function validerVente(note = '') {
+  if (Object.keys(panier).length===0) return;
+  if (!navigator.onLine) { await validerVenteHorsLigne(note); return; }
+  const articles = Object.entries(panier).map(([id, qte]) => ({ id: Number(id), quantite: qte }));
+  try {
+    const { data, error } = await client.rpc('enregistrer_vente', {
+      p_bar_id: barActuel.id,
+      p_articles: articles,
+      p_serveuse: utilisateurActuel?.nom || null,
+      p_note: note || null
+    });
+    if (error) throw error;
+    const resultat = Array.isArray(data) ? data[0] : data;
+    const noteEl = document.getElementById('note-vente');
+    if (noteEl) noteEl.value = '';
+    toast('✅ Vente enregistrée ! ' + formatPrix(resultat.total_vente));
+    panier = {};
+    await initialiserApplication();
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
+    await initialiserApplication();
   }
-  sauverCacheBoissons();
-
-  const file = lireFileAttente();
-  file.push({
-    id_local: 'off_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-    total: tv, benef: tb, note: note || null,
-    serveuse: utilisateurActuel?.nom || null,
-    articles: arts, horodatage: new Date().toISOString()
-  });
-  ecrireFileAttente(file);
-
-  const noteEl = document.getElementById('note-vente');
-  if (noteEl) noteEl.value = '';
-  toast('📡 Vente enregistrée en local (hors-ligne) ! Sera synchronisée au retour du réseau. ' + formatPrix(tv));
-  panier = {};
-  rafrachirVueActive();
 }
 
 let syncEnCours = false;
@@ -1539,16 +1534,16 @@ async function reinitialiserVentes() {
   if (!confirm("△  SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("◍ DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
-    await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
-    await client.from('ventes').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_ventes_bar', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+    if (error) throw error;
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
-
 async function reinitialiserFournisseur() {
   if (!confirm("△  Vider tout l'historique fournisseur ?")) return;
   try {
-    await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_fournisseur', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+    if (error) throw error;
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
@@ -2404,7 +2399,8 @@ async function chargerRapportServeuses() {
 
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
-  await client.from('serveuses').delete().eq('id', id);
+  const { error } = await client.rpc('supprimer_serveuse', { p_serveuse_id: id, p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
   toast('🗑️ Serveuse supprimée');
   chargerListeServeuses();
 }
