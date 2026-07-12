@@ -20,6 +20,9 @@ let commandeActive = null;
 let commandesOuvertes = [];
 let realtimeActif = false;
 let utilisateurActuel = null;
+
+let _pinGerantActif = null; 
+
 let ajoutEnCours = false;
 // ==================== UTILITAIRES ====================
 function formatPrix(val) {
@@ -98,6 +101,7 @@ function demarrerSurveillanceInactivite() {
       inactiviteTimer = setTimeout(() => {
         toast('⏰ Session expirée pour inactivité. Veuillez vous reconnecter.', 'warning');
         seDeconnecter();
+        
       }, INACTIVITY_TIMEOUT);
     }
   };
@@ -785,6 +789,7 @@ function lancerApplication() {
 async function seDeconnecter() {
   if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
   await client.auth.signOut();
+  _pinGerantActif = null;
   barActuel = null;
   utilisateurActuel = null;
   commandeActive = null;
@@ -955,8 +960,11 @@ async function modifierStock(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Stock de ${escape(b.designation)}\nActuel : ${b.stock}`, b.stock); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<0) { alert("❌ Nombre valide requis"); return; }
-  try { const { error } = await client.from('boissons').update({ stock: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Stock ${escape(b.designation)} → ${n}`); await initialiserApplication(); }
-  catch (err) { toast('❌ '+err.message,'error'); }
+  try {
+    const { error } = await client.rpc('modifier_stock_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_nouveau_stock: n, p_pin_gerant: _pinGerantActif });
+    if (error) throw error;
+    toast(`✅ Stock ${escape(b.designation)} → ${n}`); await initialiserApplication();
+  } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function modifierSeuil(id) {
@@ -964,8 +972,11 @@ async function modifierSeuil(id) {
   const b = boissons.find(i => i.id===id); if (!b) return;
   const s = prompt(`Seuil d'alerte pour ${escape(b.designation)}\nActuel : ${b.seuil||6}`, b.seuil||6); if (s===null) return;
   const n = parseInt(s); if (isNaN(n)||n<1) { alert("❌ Seuil invalide"); return; }
-  try { const { error } = await client.from('boissons').update({ seuil: n }).eq('id', id).eq('bar_id', barActuel.id); if (error) throw error; toast(`✅ Seuil ${escape(b.designation)} → ${n}`); await initialiserApplication(); }
-  catch (err) { toast('❌ '+err.message,'error'); }
+  try {
+    const { error } = await client.rpc('modifier_seuil_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_nouveau_seuil: n, p_pin_gerant: _pinGerantActif });
+    if (error) throw error;
+    toast(`✅ Seuil ${escape(b.designation)} → ${n}`); await initialiserApplication();
+  } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function ajouterBoisson(e) {
@@ -980,16 +991,14 @@ async function ajouterBoisson(e) {
   const stock = parseInt(document.getElementById('cat-stock').value)||0;
   const seuil = parseInt(document.getElementById('cat-seuil').value)||6;
   if (!nom||puInit<=0) { alert("❌ Nom et prix du cassier obligatoires."); return; }
-  if (boissons.some(b => b.designation===nom)) { alert("❌ Boisson déjà enregistrée !"); return; }
   const demi = Math.round(puInit/2), quart = type==="petit bouteille"?Math.round(puInit/4):null;
   const qteCassier = type==="petit bouteille"?24:12;
   try {
-    const { error } = await client.from('boissons').insert([{
-      designation:nom, categorie, type_bouteille:type,
-      pu_initial:puInit, prix_unitaire:pUnit, demi_cassier:demi,
-      quart_cassier:quart, quantite_par_cassier:qteCassier,
-      stock, seuil, bar_id: barActuel.id
-    }]);
+    const { error } = await client.rpc('ajouter_boisson_catalogue', {
+      p_bar_id: barActuel.id, p_designation: nom, p_categorie: categorie, p_type_bouteille: type,
+      p_pu_initial: puInit, p_prix_unitaire: pUnit, p_demi_cassier: demi, p_quart_cassier: quart,
+      p_quantite_par_cassier: qteCassier, p_stock: stock, p_seuil: seuil, p_pin_gerant: _pinGerantActif
+    });
     if (error) throw error;
     document.getElementById('form-ajouter-boisson').reset();
     toast('✅ '+nom+' ajouté !'); await initialiserApplication();
@@ -997,7 +1006,7 @@ async function ajouterBoisson(e) {
 }
 
 async function modifierPrixUnitaire(id) {
-   if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
+  if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   const b = boissons.find(i => i.id === id);
   if (!b) return;
   const rep = prompt(`Prix vente unitaire de ${escape(b.designation)} (Actuel : ${b.prix_unitaire} FCFA) :`, b.prix_unitaire);
@@ -1005,7 +1014,7 @@ async function modifierPrixUnitaire(id) {
   const nouveau = parseInt(rep);
   if (isNaN(nouveau) || nouveau < 0) { toast('❌ Prix invalide', 'error'); return; }
   try {
-    const { error } = await client.from('boissons').update({ prix_unitaire: nouveau }).eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('modifier_prix_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_nouveau_prix: nouveau, p_pin_gerant: _pinGerantActif });
     if (error) throw error;
     toast('✅ Prix mis à jour');
     await initialiserApplication();
@@ -1016,9 +1025,7 @@ async function supprimerBoisson(id) {
   if (utilisateurActuel?.role !== 'gerant') { toast('❌ Accès refusé', 'error'); return; }
   if (!confirm("Mettre cette boisson à la corbeille ?")) return;
   try {
-    const { error } = await client.from('boissons')
-      .update({ supprime: true, supprime_le: dateStr() })
-      .eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('supprimer_boisson_corbeille', { p_boisson_id: id, p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
     if (error) throw error;
     toast('🗑️ Boisson mise à la corbeille');
     await initialiserApplication();
@@ -1048,7 +1055,7 @@ async function chargerCorbeille() {
 async function restaurerBoisson(id) {
   if (!confirm("Restaurer cette boisson dans le catalogue ?")) return;
   try {
-    const { error } = await client.from('boissons').update({ supprime: false, supprime_le: null }).eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('restaurer_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
     if (error) throw error;
     toast('♻️ Boisson restaurée !', 'info');
     await initialiserApplication(); chargerCorbeille();
@@ -1059,7 +1066,7 @@ async function supprimerDefinitivement(id) {
   if (!confirm("△ Supprimer définitivement ? Cette action est IRRÉVERSIBLE.")) return;
   if (!confirm("◍ Dernière confirmation — continuer ?")) return;
   try {
-    const { error } = await client.from('boissons').delete().eq('id', id).eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('supprimer_boisson_definitif', { p_boisson_id: id, p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
     if (error) throw error;
     toast('🗑️ Boisson supprimée définitivement', 'warning'); chargerCorbeille();
   } catch (err) { toast('❌ ' + err.message, 'error'); }
@@ -1273,7 +1280,8 @@ function mettreAJourTicket() {
 
 function afficherDerniereVente() {
   const el = document.getElementById('derniere-vente-info'); if (!el) return;
-  const vr = historique.filter(v => !estSpecial(v));
+  const estGerant = utilisateurActuel?.role === 'gerant';
+  const vr = historique.filter(v => !estSpecial(v) && (estGerant || v.serveuse === utilisateurActuel?.nom));
   el.innerText = vr.length>0?`${vr[0].date} — ${formatPrix(vr[0].total)}`:'Aucune vente enregistrée';
 }
 
@@ -1507,23 +1515,46 @@ async function reinitialiserVentes() {
   if (!confirm("△  SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("◍ DERNIÈRE CONFIRMATION — Continuer ?")) return;
   try {
-    await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
-    await client.from('ventes').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_ventes_bar', { p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
+    if (error) throw error;
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
-
 async function reinitialiserFournisseur() {
   if (!confirm("△  Vider tout l'historique fournisseur ?")) return;
   try {
-    await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_fournisseur', { p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
+    if (error) throw error;
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
 
 async function reinitialiserVentesServeuse() {
-  if (!confirm("△  Réinitialiser les ventes de toutes les serveuses ?")) return;
-  toast('Fonctionnalité à configurer selon le besoin.', 'warning');
+  const periode = document.getElementById('rapport-periode')?.value || 'today';
+  const libellesPeriode = { today: "d'aujourd'hui", week: "des 7 derniers jours", month: "de ce mois", all: "depuis le début (TOUTES)" };
+  const libelle = libellesPeriode[periode] || periode;
+
+  if (!confirm(`△  Supprimer DÉFINITIVEMENT les ventes des serveuses ${libelle} ?\n\nLes ventes faites directement par le gérant seront conservées.\nCette action est IRRÉVERSIBLE.`)) return;
+  if (!confirm("◍ Dernière confirmation — continuer la suppression ?")) return;
+
+  const maintenant = new Date();
+  let dateDebut = null;
+  if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
+  else if (periode === 'week') dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
+
+  try {
+    const { data, error } = await client.rpc('reinitialiser_ventes_serveuse', {
+      p_bar_id: barActuel.id, p_date_debut: dateDebut, p_pin_gerant: _pinGerantActif
+    });
+    if (error) throw error;
+    if (!data || data === 0) { toast('Aucune vente de serveuse à supprimer sur cette période.', 'warning'); return; }
+    toast(`✅ ${data} vente(s) de serveuse supprimée(s) ${libelle}.`);
+    await chargerRapportServeuses();
+    await initialiserApplication();
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
+  }
 }
 
 // ==================== FOURNISSEUR ====================
@@ -2177,6 +2208,7 @@ async function validerPinGerant() {
   utilisateurActuel = { nom: 'Gérant', role: 'gerant' };
   document.getElementById('input-pin-gerant').value = '';
   if (errEl) errEl.style.display = 'none';
+  _pinGerantActif = pin;
   lancerApplicationAvecRole();
 }
 
@@ -2263,7 +2295,7 @@ async function ajouterServeuse() {
   const pin = document.getElementById('srv-pin')?.value.trim();
   if (!nom) { toast('△  Nom obligatoire', 'warning'); return; }
   if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
-  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin });
+  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin, p_pin_gerant: _pinGerantActif });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('srv-nom').value = '';
   document.getElementById('srv-pin').value = '';
@@ -2285,7 +2317,7 @@ async function chargerRapportServeuses() {
   if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).toISOString();
   else if (periode === 'week') dateDebut = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString();
-  let query = client.from('ventes').select('id, total, benef, serveuse, created_at, vente_articles(boisson_designation, quantite)').eq('bar_id', barActuel.id).order('created_at', { ascending: false });
+  let query = client.from('ventes').select('id, total, benef, serveuse, note, created_at, vente_articles(boisson_designation, quantite)').eq('bar_id', barActuel.id).order('created_at', { ascending: false });
   if (dateDebut) query = query.gte('created_at', dateDebut);
   const { data: ventes, error } = await query;
   if (error) { toast('❌ ' + error.message, 'error'); return; }
@@ -2325,7 +2357,9 @@ async function chargerRapportServeuses() {
         ${g.ventes.slice(0, 5).map(v => {
           const articles = (v.vente_articles||[]).map(a => `${a.boisson_designation} ×${a.quantite}`).join(', ');
           const date = new Date(v.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;"><span class="txt-secondaire">${date} — ${articles || '—'}</span><span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span></div>`;
+          const estConflit = (v.note||'').toUpperCase().includes('CONFLIT STOCK');
+          const badgeConflit = estConflit ? ' <span style="background:#fff3e0;color:#e65100;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;border:1px solid #ffcc80;">⚠️ CONFLIT</span>' : '';
+          return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;"><span class="txt-secondaire">${date} — ${articles || '—'}${badgeConflit}</span><span style="font-weight:600;color:#1a6b3a;">${formatPrix(parseInt(v.total)||0)}</span></div>`;
         }).join('')}
         ${g.ventes.length > 5 ? `<div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">+ ${g.ventes.length - 5} autre(s)</div>` : ''}
       </div>
@@ -2335,12 +2369,13 @@ async function chargerRapportServeuses() {
 
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
-  await client.from('serveuses').delete().eq('id', id);
+  const { error } = await client.rpc('supprimer_serveuse', { p_serveuse_id: id, p_bar_id: barActuel.id, p_pin_gerant: _pinGerantActif });
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
   toast('🗑️ Serveuse supprimée');
   chargerListeServeuses();
 }
-
 function changerUtilisateur() {
+  _pinGerantActif = null;
   utilisateurActuel = null; realtimeActif = false;
   client.removeAllChannels();
   afficherEcranRole();
@@ -2370,7 +2405,7 @@ async function changerNomBar() {
   if (nom === barActuel.nom) { afficherMessageProfil('Ce nom est déjà le vôtre.', false); return; }
 
   try {
-    const { error } = await client.from('bars').update({ nom }).eq('id', barActuel.id);
+    const { error } = await client.rpc('changer_nom_bar', { p_bar_id: barActuel.id, p_nouveau_nom: nom, p_pin_gerant: _pinGerantActif });
     if (error) throw error;
     barActuel.nom = nom;
     localStorage.setItem('barstock_bar_nom', nom);
