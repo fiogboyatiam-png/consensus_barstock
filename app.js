@@ -266,7 +266,7 @@ async function traiterFileAttente() {
       if (conflitsVente.length > 0) {
         nbConflits++;
         const noteConflit = `⚠️ CONFLIT STOCK (vente hors-ligne) : ${conflitsVente.join(', ')} — stock insuffisant au moment de la synchro, à vérifier.`;
-        await client.from('ventes').update({ note: [noteFinale, noteConflit].filter(Boolean).join(' | ') }).eq('id', tr.id);
+        await client.rpc('marquer_note_vente', { p_vente_id: tr.id, p_bar_id: barActuel.id, p_note: [noteFinale, noteConflit].filter(Boolean).join(' | ') });
       }
       nbOk++;
     } catch (err) {
@@ -541,8 +541,10 @@ async function afficherInterfaceAdmin() {
       'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    const { bars, error: errBars } = await res.json();
+    const { bars, statsGlobales, error: errBars } = await res.json();
     if (errBars) { alert('Erreur : ' + errBars); return; }
+
+    afficherStatsGlobalesAdmin(statsGlobales);
 
     if (!bars || bars.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="admin-vide">Aucun bar enregistré.</td></tr>';
@@ -688,6 +690,45 @@ async function creerBar() {
     afficherErreurAdmin('Erreur lors de la création. Vérifiez les informations et réessayez.');
   } finally {
     if (btn) { btn.disabled = false; btn.innerText = '➕ Créer le bar'; }
+  }
+}
+
+function afficherStatsGlobalesAdmin(stats) {
+  const div = document.getElementById('admin-stats-globales');
+  if (!div || !stats) return;
+  div.innerHTML = `
+    <div class="stat-box" style="border-left-color:#1a6b3a;"><div class="stat-label">CA total (tous bars)</div><div class="stat-value vert">${formatPrix(stats.totalGlobalCA)}</div></div>
+    <div class="stat-box" style="border-left-color:#0288d1;"><div class="stat-label">CA aujourd'hui</div><div class="stat-value" style="color:#0288d1;">${formatPrix(stats.totalAujCA)}</div></div>
+    <div class="stat-box" style="border-left-color:#d4a017;"><div class="stat-label">Bénéfice total</div><div class="stat-value" style="color:#d4a017;">${formatPrix(stats.totalGlobalBenef)}</div></div>
+    <div class="stat-box" style="border-left-color:#7b1fa2;"><div class="stat-label">Ventes enregistrées</div><div class="stat-value" style="color:#7b1fa2;">${stats.nbVentesTotal}</div></div>
+    <div class="stat-box" style="border-left-color:#2e7d32;"><div class="stat-label">Bars actifs</div><div class="stat-value vert">${stats.nbBarsActifs} / ${stats.nbBars}</div></div>`;
+}
+
+// Crée (ou réinitialise) un bar de démonstration avec des données fictives réalistes,
+// pour faire une démo à un prospect sans toucher aux vraies données de personne.
+async function creerBarDemo() {
+  if (!confirm('Créer/réinitialiser le bar de démonstration ?\n\nUn bar avec catalogue, serveuses et historique de ventes fictifs sera (re)créé.')) return;
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { alert('Session expirée, reconnecte-toi.'); return; }
+
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'creer-bar-demo' })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    alert(`✅ Bar de démo prêt !\n\nEmail : ${result.email}\nMot de passe : ${result.password}\n\nDeux serveuses fictives : Ama (PIN 1234) et Kossi (PIN 5678).`);
+    await afficherInterfaceAdmin();
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
   }
 }
 
@@ -1424,31 +1465,16 @@ async function annulerDerniereVente() {
   if (vr.length===0) { toast('Aucune vente à annuler.','warning'); return; }
   const v = vr[0];
 
-  // Contrôle : une serveuse ne peut annuler que SES propres ventes. Le gérant peut tout annuler.
-  if (utilisateurActuel?.role !== 'gerant' && v.serveuse && v.serveuse !== utilisateurActuel?.nom) {
-    toast('❌ Tu ne peux annuler que tes propres ventes.', 'error');
-    return;
-  }
-
   const det = (v.articles||[]).map(a=>`${a.nom} ×${a.qte}`).join(', ');
   if (!confirm(`Annuler la vente du ${v.date} ?\n${det}\nTotal : ${formatPrix(v.total)}\n\nLe stock sera remis à jour.`)) return;
 
   annulationEnCours = true;
   try {
-    // On revérifie que la vente existe TOUJOURS avant de toucher au stock —
-    // ça empêche de restaurer le stock plusieurs fois si on clique/actualise mal à propos.
-    const { data: existeEncore } = await client.from('ventes').select('id').eq('id', v.id).maybeSingle();
-    if (!existeEncore) {
-      toast('Cette vente a déjà été annulée.', 'warning');
-      await initialiserApplication();
-      return;
-    }
-    for (const art of v.articles||[]) {
-      const b = boissons.find(i=>i.designation===art.nom);
-      if (b) await client.rpc('incrementer_stock_boisson', { p_boisson_id: b.id, p_bar_id: barActuel.id, p_quantite: art.qte });
-    }
-    await client.from('vente_articles').delete().eq('vente_id',v.id);
-    await client.from('ventes').delete().eq('id',v.id);
+    // p_serveuse_nom=null pour le gérant (peut tout annuler), sinon la fonction vérifie
+    // côté serveur que la vente appartient bien à la serveuse connectée.
+    const p_serveuse_nom = utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null);
+    const { error } = await client.rpc('annuler_vente', { p_vente_id: v.id, p_serveuse_nom });
+    if (error) throw error;
     toast('↩️ Vente annulée, stock remis à jour.','info'); await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
   finally { annulationEnCours = false; }
@@ -1563,9 +1589,10 @@ function exporterExcel() {
 async function reinitialiserVentes() {
   if (!confirm("△  SUPPRIMER TOUT L'HISTORIQUE DES VENTES ?\nAction irréversible.")) return;
   if (!confirm("◍ DERNIÈRE CONFIRMATION — Continuer ?")) return;
+  if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour cette action.', 'error'); return; }
   try {
-    await client.from('vente_articles').delete().eq('bar_id', barActuel.id);
-    await client.from('ventes').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_ventes_bar', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+    if (error) throw error;
     toast('✅ Historique des ventes supprimé'); panier={}; await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
@@ -2299,7 +2326,7 @@ async function afficherChoixServeuse() {
   document.getElementById('panel-serveuse').style.display = 'block';
   document.getElementById('panel-gerant').style.display = 'none';
   document.getElementById('panel-pin-serveuse').style.display = 'none';
-  const { data: serveuses } = await client.from('serveuses').select('id, nom').eq('bar_id', barActuel.id).order('nom');
+  const { data: serveuses } = await client.from('serveuses_publiques').select('id, nom').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses'); if (!div) return;
   if (!serveuses || serveuses.length === 0) {
     div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
@@ -2335,7 +2362,8 @@ async function validerPinServeuse() {
 
   const { data: ok, error } = await client.rpc('verifier_pin_serveuse', { p_serveuse_id: serveuseCible.id, p_pin: pin });
 
-  if (error || !ok) {
+  if (error) { if (errEl) { errEl.textContent = error.message; errEl.style.display = 'block'; } return; }
+  if (!ok) {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
     document.getElementById('input-pin-serveuse').value = ''; return;
   }
@@ -2379,7 +2407,7 @@ async function ajouterServeuse() {
   const pin = document.getElementById('srv-pin')?.value.trim();
   if (!nom) { toast('△  Nom obligatoire', 'warning'); return; }
   if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
-  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin });
+  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin, p_pin_gerant: pinGerantActuel });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('srv-nom').value = '';
   document.getElementById('srv-pin').value = '';
@@ -2388,7 +2416,7 @@ async function ajouterServeuse() {
 }
 
 async function chargerListeServeuses() {
-  const { data } = await client.from('serveuses').select('*').eq('bar_id', barActuel.id).order('nom');
+  const { data } = await client.from('serveuses_publiques').select('id, nom').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
   if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
   div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
@@ -2451,7 +2479,8 @@ async function chargerRapportServeuses() {
 
 async function supprimerServeuse(id) {
   if (!confirm('Supprimer cette serveuse ?')) return;
-  await client.from('serveuses').delete().eq('id', id);
+  const { error } = await client.rpc('supprimer_serveuse', { p_serveuse_id: id, p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
   toast('🗑️ Serveuse supprimée');
   chargerListeServeuses();
 }

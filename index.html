@@ -61,6 +61,9 @@
       </button>
     </div>
 
+    <!-- Stats globales -->
+    <div id="admin-stats-globales" class="stats-container" style="margin-bottom:24px;"></div>
+
     <!-- Formulaire création bar -->
     <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid #1a6b3a;">
       <h3 style="margin:0 0 16px; color:#0f3d22;">➕ Créer un nouveau bar</h3>
@@ -98,6 +101,10 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
         <div style="display:flex; gap:10px;">
+          <button onclick="creerBarDemo()"
+            style="background:#f3e5f5; color:#7b1fa2; border:1px solid #ce93d8; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
+            🎭 Créer bar démo
+          </button>
           <button onclick="supprimerTousLesBars()"
             style="background:#ffebee; color:#c62828; border:1px solid #ef9a9a; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
             ⚠️ Supprimer tous les bars
