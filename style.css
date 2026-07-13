@@ -621,6 +621,22 @@ hr.sep { border: 0; border-top: 2px dashed #ccc; margin: 36px 0; }
 .icon-blue { color: var(--info); }
 .icon-gold { color: #d4a017; }
 
+/* ===== ÉCRAN ADMIN — MOBILE ===== */
+@media (max-width: 768px) {
+  #ecran-admin { padding: 12px !important; margin: 0 !important; max-width: 100%; }
+  .admin-header-mobile { flex-direction: column; align-items: flex-start !important; gap: 14px; }
+  .admin-header-mobile > div:last-child { width: 100%; }
+  .admin-header-mobile button { flex: 1; }
+  .admin-form-creation { grid-template-columns: 1fr !important; }
+  .admin-liste-header { flex-direction: column; align-items: flex-start !important; }
+  .admin-liste-header > div { width: 100%; }
+  .admin-liste-header button { flex: 1; font-size: 12px !important; padding: 8px 6px !important; }
+}
+@media (max-width: 480px) {
+  #ecran-admin { padding: 8px !important; }
+  .admin-header-mobile > div:first-child > div:first-child { font-size: 18px !important; }
+}
+
 /* ===== ÉCRAN ADMIN ===== */
 #ecran-admin { max-width: 960px; margin: 40px auto; padding: 24px; }
 .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }

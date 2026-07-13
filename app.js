@@ -336,6 +336,29 @@ async function synchroniserUneCommandeEnAttente(entry) {
   }
 
   if (entry.action === 'encaisser') {
+    // Sécurité supplémentaire : on revérifie les prix même à la synchro,
+    // au cas où ils auraient changé entre la mise en attente et la reconnexion.
+    const idsArt = (entry.articles || []).map(a => a.id);
+    const { data: prixFrais } = await client.from('boissons')
+      .select('id, designation, prix_unitaire, pu_initial, quantite_par_cassier, type_bouteille')
+      .in('id', idsArt).eq('bar_id', barActuel.id);
+    const prixMap = {};
+    (prixFrais || []).forEach(b => { prixMap[b.id] = b; });
+    let totalVerif = 0, benefVerif = 0;
+    const articlesVerifies = [];
+    for (const a of entry.articles || []) {
+      const b = prixMap[a.id]; if (!b) continue;
+      const prixReel = b.prix_unitaire || 0;
+      const qpc = b.quantite_par_cassier || (b.type_bouteille === 'petit bouteille' ? 24 : 12);
+      const achat = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
+      totalVerif += prixReel * a.qte;
+      benefVerif += (prixReel - achat) * a.qte;
+      articlesVerifies.push({ id: a.id, designation: b.designation, prix: prixReel, qte: a.qte });
+    }
+    entry.articles = articlesVerifies;
+    entry.total = totalVerif;
+    entry.benef = benefVerif;
+
     if (estNouvelle) {
       const { data, error } = await client.from('commandes').insert([{
         bar_id: barActuel.id, table_num: entry.table_num, client_nom: entry.client_nom || null,
@@ -541,10 +564,8 @@ async function afficherInterfaceAdmin() {
       'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/smart-handler',
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    const { bars, statsGlobales, error: errBars } = await res.json();
+    const { bars, error: errBars } = await res.json();
     if (errBars) { alert('Erreur : ' + errBars); return; }
-
-    afficherStatsGlobalesAdmin(statsGlobales);
 
     if (!bars || bars.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="admin-vide">Aucun bar enregistré.</td></tr>';
@@ -691,17 +712,6 @@ async function creerBar() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerText = '➕ Créer le bar'; }
   }
-}
-
-function afficherStatsGlobalesAdmin(stats) {
-  const div = document.getElementById('admin-stats-globales');
-  if (!div || !stats) return;
-  div.innerHTML = `
-    <div class="stat-box" style="border-left-color:#1a6b3a;"><div class="stat-label">CA total (tous bars)</div><div class="stat-value vert">${formatPrix(stats.totalGlobalCA)}</div></div>
-    <div class="stat-box" style="border-left-color:#0288d1;"><div class="stat-label">CA aujourd'hui</div><div class="stat-value" style="color:#0288d1;">${formatPrix(stats.totalAujCA)}</div></div>
-    <div class="stat-box" style="border-left-color:#d4a017;"><div class="stat-label">Bénéfice total</div><div class="stat-value" style="color:#d4a017;">${formatPrix(stats.totalGlobalBenef)}</div></div>
-    <div class="stat-box" style="border-left-color:#7b1fa2;"><div class="stat-label">Ventes enregistrées</div><div class="stat-value" style="color:#7b1fa2;">${stats.nbVentesTotal}</div></div>
-    <div class="stat-box" style="border-left-color:#2e7d32;"><div class="stat-label">Bars actifs</div><div class="stat-value vert">${stats.nbBarsActifs} / ${stats.nbBars}</div></div>`;
 }
 
 // Crée (ou réinitialise) un bar de démonstration avec des données fictives réalistes,
@@ -1599,8 +1609,10 @@ async function reinitialiserVentes() {
 
 async function reinitialiserFournisseur() {
   if (!confirm("△  Vider tout l'historique fournisseur ?")) return;
+  if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour cette action.', 'error'); return; }
   try {
-    await client.from('fournisseur_historique').delete().eq('bar_id', barActuel.id);
+    const { error } = await client.rpc('reinitialiser_fournisseur', { p_bar_id: barActuel.id, p_pin_gerant: pinGerantActuel });
+    if (error) throw error;
     toast('✅ Historique fournisseur vidé'); await chargerEspaceFournisseur();
   } catch (err) { toast('❌ '+err.message,'error'); }
 }
@@ -2082,14 +2094,27 @@ async function encaisserCommande() {
   const note = document.getElementById('modal-cmd-note')?.value.trim() || null;
   const label = cmd.client_nom ? `${cmd.table_num} — ${cmd.client_nom}` : cmd.table_num;
 
-  // Calculer total et bénéfice
+  // Sécurité : on revérifie le VRAI prix de chaque article directement en base au moment de payer,
+  // au lieu de faire confiance à ce qui est stocké dans le JSON de la commande (qui pourrait avoir
+  // été modifié depuis la console du navigateur).
+  const idsArticles = cmdArticles.map(a => a.id);
+  const { data: prixFrais } = await client.from('boissons')
+    .select('id, designation, prix_unitaire, pu_initial, quantite_par_cassier, type_bouteille')
+    .in('id', idsArticles).eq('bar_id', barActuel.id);
+  const prixMap = {};
+  (prixFrais || []).forEach(b => { prixMap[b.id] = b; });
+
+  // Calculer total et bénéfice avec le prix RÉEL (jamais celui du JSON)
   let total = 0, benef = 0;
+  const cmdArticlesVerifies = [];
   for (const a of cmdArticles) {
-    const b = boissons.find(i => i.id === a.id); if (!b) continue;
+    const b = prixMap[a.id]; if (!b) continue;
+    const prixReel = b.prix_unitaire || 0;
     const qpc = b.quantite_par_cassier || (b.type_bouteille === 'petit bouteille' ? 24 : 12);
     const achat = b.pu_initial > 0 ? Math.round(b.pu_initial / qpc) : 0;
-    total += a.prix * a.qte;
-    benef += (a.prix - achat) * a.qte;
+    total += prixReel * a.qte;
+    benef += (prixReel - achat) * a.qte;
+    cmdArticlesVerifies.push({ id: a.id, designation: b.designation, prix: prixReel, qte: a.qte });
   }
 
   if (!confirm(`Encaisser ${label} pour ${formatPrix(total)} ?`)) return;
@@ -2103,7 +2128,7 @@ async function encaisserCommande() {
   if (!navigator.onLine) {
     encaissementEnCours = true;
     const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
-    entry.articles = JSON.parse(JSON.stringify(cmdArticles));
+    entry.articles = JSON.parse(JSON.stringify(cmdArticlesVerifies));
     entry.total = total;
     entry.benef = benef;
     entry.note = noteFinale;
@@ -2131,9 +2156,9 @@ async function encaisserCommande() {
       return;
     }
 
-    // Sauvegarder d'abord
+    // Sauvegarder d'abord (avec les prix vérifiés, pas ceux potentiellement modifiés)
     await client.from('commandes')
-      .update({ articles: cmdArticles, total: cmd.total, note: noteFinale })
+      .update({ articles: cmdArticlesVerifies, total, note: noteFinale })
       .eq('id', cmdId);
 
     // Enregistrer la vente
@@ -2144,7 +2169,7 @@ async function encaisserCommande() {
     if (eV) throw eV;
 
     // Enregistrer les articles — stock déjà décompté à l'ajout
-    for (const a of cmdArticles) {
+    for (const a of cmdArticlesVerifies) {
       await client.from('vente_articles').insert([{
         vente_id: vente.id, bar_id: barActuel.id,
         boisson_designation: a.designation,
@@ -2326,7 +2351,8 @@ async function afficherChoixServeuse() {
   document.getElementById('panel-serveuse').style.display = 'block';
   document.getElementById('panel-gerant').style.display = 'none';
   document.getElementById('panel-pin-serveuse').style.display = 'none';
-  const { data: serveuses } = await client.from('serveuses_publiques').select('id, nom').eq('bar_id', barActuel.id).order('nom');
+  const { data: brutes } = await client.from('serveuses_publiques').select('id, nom, actif').eq('bar_id', barActuel.id).order('nom');
+  const serveuses = (brutes || []).filter(s => s.actif !== false);
   const div = document.getElementById('liste-serveuses'); if (!div) return;
   if (!serveuses || serveuses.length === 0) {
     div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse enregistrée.<br>Le gérant doit en ajouter depuis l\'app.</div>';
@@ -2416,10 +2442,38 @@ async function ajouterServeuse() {
 }
 
 async function chargerListeServeuses() {
-  const { data } = await client.from('serveuses_publiques').select('id, nom').eq('bar_id', barActuel.id).order('nom');
+  const { data } = await client.from('serveuses_publiques').select('id, nom, actif').eq('bar_id', barActuel.id).order('nom');
   const div = document.getElementById('liste-serveuses-gestion'); if (!div) return;
   if (!data || data.length === 0) { div.innerHTML = '<div style="color:#aaa;font-size:13px;padding:10px;">Aucune serveuse enregistrée.</div>'; return; }
-  div.innerHTML = data.map(s => `<div class="ligne-serveuse-gestion"><span style="font-weight:600;">👤 ${escape(s.nom)}</span><button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button></div>`).join('');
+  div.innerHTML = data.map(s => {
+    const estActif = s.actif !== false;
+    const badge = estActif
+      ? '<span style="font-size:11px;background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;margin-left:8px;">🟢 Actif</span>'
+      : '<span style="font-size:11px;background:#ffebee;color:#c62828;padding:2px 8px;border-radius:10px;margin-left:8px;">🔴 Bloqué</span>';
+    return `<div class="ligne-serveuse-gestion">
+      <span style="font-weight:600;">👤 ${escape(s.nom)}${badge}</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-sm" style="background:${estActif ? '#fff3e0' : '#e8f5e9'};color:${estActif ? '#ef6c00' : '#2e7d32'};"
+          onclick="toggleAccesServeuse(${s.id}, '${escape(s.nom)}', ${!estActif})">${estActif ? '🔒 Bloquer' : '🔓 Débloquer'}</button>
+        <button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Bloque/débloque l'accès d'une serveuse au site (sans la supprimer) — utile après un service,
+// une pause, ou un licenciement : elle ne peut plus se connecter même avec le bon PIN.
+async function toggleAccesServeuse(id, nom, nouvelEtat) {
+  const action = nouvelEtat ? 'débloquer' : 'bloquer';
+  if (!confirm(`Confirmer : ${action} l'accès de ${nom} ?${!nouvelEtat ? '\n\nElle ne pourra plus se connecter du tout, même avec le bon PIN, jusqu\'à ce que tu la débloques.' : ''}`)) return;
+  try {
+    const { error } = await client.rpc('activer_desactiver_serveuse', {
+      p_serveuse_id: id, p_bar_id: barActuel.id, p_actif: nouvelEtat, p_pin_gerant: pinGerantActuel
+    });
+    if (error) throw error;
+    toast(nouvelEtat ? `🔓 Accès de ${nom} débloqué` : `🔒 Accès de ${nom} bloqué`);
+    chargerListeServeuses();
+  } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 async function chargerRapportServeuses() {

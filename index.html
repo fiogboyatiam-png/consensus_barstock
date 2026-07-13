@@ -46,28 +46,27 @@
   <div style="max-width:1100px; margin:0 auto;">
 
     <!-- Header admin -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; background:#0f3d22; padding:18px 24px; border-radius:12px; color:white;">
+    <div class="admin-header-mobile" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; background:#0f3d22; padding:18px 24px; border-radius:12px; color:white;">
       <div>
         <div style="font-size:22px; font-weight:800;">🛡️ Super Administration</div>
         <div style="opacity:0.7; font-size:13px; margin-top:2px;">BarStock — Gestion globale des bars</div>
       </div>
-      <button onclick="changerMotDePasseAdmin()"
-  style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
-  🔒 Changer mot de passe
-</button>
-      <button onclick="seDeconnecterAdmin()"
-        style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
-        🚪 Déconnexion
-      </button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button onclick="changerMotDePasseAdmin()"
+    style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
+    🔒 Changer mot de passe
+  </button>
+        <button onclick="seDeconnecterAdmin()"
+          style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
+          🚪 Déconnexion
+        </button>
+      </div>
     </div>
-
-    <!-- Stats globales -->
-    <div id="admin-stats-globales" class="stats-container" style="margin-bottom:24px;"></div>
 
     <!-- Formulaire création bar -->
     <div style="background:white; border-radius:12px; padding:24px; margin-bottom:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06); border-left:5px solid #1a6b3a;">
       <h3 style="margin:0 0 16px; color:#0f3d22;">➕ Créer un nouveau bar</h3>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr auto; gap:12px; align-items:end;">
+      <div class="admin-form-creation" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr auto; gap:12px; align-items:end;">
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:13px; font-weight:600; color:#555;">Nom du bar</label>
           <input type="text" id="new-bar-nom" placeholder="Ex: Bar Le Sunset"
@@ -98,9 +97,9 @@
 
     <!-- Tableau des bars -->
     <div style="background:white; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <div class="admin-liste-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <h3 style="margin:0; color:#0f3d22;">📋 Liste des bars</h3>
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button onclick="creerBarDemo()"
             style="background:#f3e5f5; color:#7b1fa2; border:1px solid #ce93d8; padding:7px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px;">
             🎭 Créer bar démo
