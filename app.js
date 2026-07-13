@@ -850,7 +850,7 @@ async function initialiserApplication() {
 
     const { data: dv, error: eV } = await client
       .from('ventes')
-      .select('id, total, benefice, benef, note, date, created_at, vente_articles(boisson_designation, quantite, prix_unitaire)')
+      .select('id, total, benefice, benef, note, date, created_at, serveuse, vente_articles(boisson_designation, quantite, prix_unitaire)')
       .eq('bar_id', barActuel.id)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -868,7 +868,7 @@ async function initialiserApplication() {
           if (Array.isArray(a)) arts = a.map(x => ({ nom: x.designation || x.nom, qte: x.qte || x.quantite }));
         } catch { arts = [{ nom: "⨝ PAIEMENT FOURNISSEUR", qte: 1 }]; }
       }
-      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts };
+      return { id: v.id, date: dateAff || 'Date inconnue', total: v.total, benef: gain, note: v.note || '', articles: arts, serveuse: v.serveuse || null };
     });
 
     mettreAJourStatsDuJour();
@@ -1417,13 +1417,32 @@ function annulerVente() {
   panier={}; rafrachirVueActive();
 }
 
+let annulationEnCours = false;
 async function annulerDerniereVente() {
+  if (annulationEnCours) return;
   const vr = historique.filter(v => !estSpecial(v));
   if (vr.length===0) { toast('Aucune vente à annuler.','warning'); return; }
   const v = vr[0];
+
+  // Contrôle : une serveuse ne peut annuler que SES propres ventes. Le gérant peut tout annuler.
+  if (utilisateurActuel?.role !== 'gerant' && v.serveuse && v.serveuse !== utilisateurActuel?.nom) {
+    toast('❌ Tu ne peux annuler que tes propres ventes.', 'error');
+    return;
+  }
+
   const det = (v.articles||[]).map(a=>`${a.nom} ×${a.qte}`).join(', ');
   if (!confirm(`Annuler la vente du ${v.date} ?\n${det}\nTotal : ${formatPrix(v.total)}\n\nLe stock sera remis à jour.`)) return;
+
+  annulationEnCours = true;
   try {
+    // On revérifie que la vente existe TOUJOURS avant de toucher au stock —
+    // ça empêche de restaurer le stock plusieurs fois si on clique/actualise mal à propos.
+    const { data: existeEncore } = await client.from('ventes').select('id').eq('id', v.id).maybeSingle();
+    if (!existeEncore) {
+      toast('Cette vente a déjà été annulée.', 'warning');
+      await initialiserApplication();
+      return;
+    }
     for (const art of v.articles||[]) {
       const b = boissons.find(i=>i.designation===art.nom);
       if (b) await client.rpc('incrementer_stock_boisson', { p_boisson_id: b.id, p_bar_id: barActuel.id, p_quantite: art.qte });
@@ -1432,6 +1451,7 @@ async function annulerDerniereVente() {
     await client.from('ventes').delete().eq('id',v.id);
     toast('↩️ Vente annulée, stock remis à jour.','info'); await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
+  finally { annulationEnCours = false; }
 }
 
 // ==================== HISTORIQUE ====================
@@ -1559,8 +1579,28 @@ async function reinitialiserFournisseur() {
 }
 
 async function reinitialiserVentesServeuse() {
-  if (!confirm("△  Réinitialiser les ventes de toutes les serveuses ?")) return;
-  toast('Fonctionnalité à configurer selon le besoin.', 'warning');
+  const periode = document.getElementById('rapport-periode')?.value || 'today';
+  const maintenant = new Date();
+  let dateDebut;
+  if (periode === 'today') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate());
+  else if (periode === 'week') dateDebut = new Date(Date.now() - 7*24*60*60*1000);
+  else if (periode === 'month') dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1);
+  else dateDebut = new Date(2000, 0, 1); // "all" : depuis toujours
+
+  const libellePeriode = { today: "aujourd'hui", week: "les 7 derniers jours", month: "ce mois-ci", all: "TOUT l'historique" }[periode];
+
+  if (!confirm(`⚠️ Réinitialiser les ventes pour : ${libellePeriode} ?\n\nCette action est irréversible.`)) return;
+  if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour effectuer cette action.', 'error'); return; }
+
+  try {
+    const { error } = await client.rpc('reinitialiser_ventes_serveuse', {
+      p_bar_id: barActuel.id, p_date_debut: dateDebut.toISOString(), p_pin_gerant: pinGerantActuel
+    });
+    if (error) throw error;
+    toast('✅ Ventes réinitialisées pour : ' + libellePeriode);
+    await chargerRapportServeuses();
+    await initialiserApplication();
+  } catch (err) { toast('❌ ' + err.message, 'error'); }
 }
 
 // ==================== FOURNISSEUR ====================
@@ -1999,7 +2039,9 @@ function fermerModalCommande() {
 
 async function encaisserCommandeId(id) { const cmd = commandesOuvertes.find(c => c.id == id); if (cmd) { commandeActive = cmd; await encaisserCommande(); } }
 
+let encaissementEnCours = false;
 async function encaisserCommande() {
+  if (encaissementEnCours) return;
   if (!commandeActive) return;
   const cmdId = commandeActive.id;
   const cmdArticles = [...commandeActive.articles];
@@ -2023,12 +2065,22 @@ async function encaisserCommande() {
     benef += (a.prix - achat) * a.qte;
   }
 
+  if (!confirm(`Encaisser ${label} pour ${formatPrix(total)} ?`)) return;
+
+  // La vente reste attribuée à la serveuse propriétaire de la commande (même si c'est le gérant qui encaisse) ;
+  // on ajoute juste une mention si ce n'est pas elle qui a validé.
+  const serveuseVente = cmd.serveuse || (utilisateurActuel?.role === 'gerant' ? null : utilisateurActuel?.nom) || null;
+  const encaisseParAutrui = utilisateurActuel?.role === 'gerant' && cmd.serveuse && cmd.serveuse !== utilisateurActuel?.nom;
+  const noteFinale = (note || label) + (encaisseParAutrui ? ' — Encaissée par le Gérant' : '');
+
   if (!navigator.onLine) {
+    encaissementEnCours = true;
     const { attente, entry } = obtenirOuCreerEntreeAttente(commandeActive);
     entry.articles = JSON.parse(JSON.stringify(cmdArticles));
     entry.total = total;
     entry.benef = benef;
-    entry.note = note || label;
+    entry.note = noteFinale;
+    entry.serveuse = serveuseVente;
     entry.action = 'encaisser';
     ecrireCommandesEnAttente(attente);
 
@@ -2036,19 +2088,31 @@ async function encaisserCommande() {
     fermerModalCommande();
     toast('📡 Commande encaissée en local (hors-ligne) — ' + formatPrix(total) + ' — sera synchronisée');
     afficherCommandes();
+    encaissementEnCours = false;
     return;
   }
 
-  // Sauvegarder d'abord
-  await client.from('commandes')
-    .update({ articles: cmdArticles, total: cmd.total, note: note || label })
-    .eq('id', cmdId);
-
+  encaissementEnCours = true;
   try {
+    // Vérifier que la commande est toujours ouverte avant d'encaisser —
+    // empêche l'encaissement en double si on clique plusieurs fois d'affilée.
+    const { data: cmdFraiche } = await client.from('commandes').select('statut').eq('id', cmdId).maybeSingle();
+    if (!cmdFraiche || cmdFraiche.statut !== 'ouverte') {
+      toast('Cette commande a déjà été encaissée.', 'warning');
+      await chargerCommandes();
+      fermerModalCommande();
+      return;
+    }
+
+    // Sauvegarder d'abord
+    await client.from('commandes')
+      .update({ articles: cmdArticles, total: cmd.total, note: noteFinale })
+      .eq('id', cmdId);
+
     // Enregistrer la vente
     const { data: vente, error: eV } = await client.from('ventes')
       .insert([{ bar_id: barActuel.id, total, benefice: benef, benef,
-        note: note || label, serveuse: utilisateurActuel?.nom || null }])
+        note: noteFinale, serveuse: serveuseVente }])
       .select().single();
     if (eV) throw eV;
 
@@ -2070,6 +2134,7 @@ async function encaisserCommande() {
     await chargerCommandes();
 
   } catch (err) { toast('❌ ' + err.message, 'error'); }
+  finally { encaissementEnCours = false; }
 }
 
 async function annulerCommande(id) {
