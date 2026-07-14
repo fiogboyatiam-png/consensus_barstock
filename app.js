@@ -313,7 +313,7 @@ async function synchroniserUneCommandeEnAttente(entry) {
 
   if (entry.action === 'annuler') {
     if (entry.id && !String(entry.id).startsWith('cmdloc_')) {
-      await client.from('commandes').update({ statut: 'annulee' }).eq('id', entry.id);
+      await client.rpc('annuler_commande_secure', { p_commande_id: entry.id, p_bar_id: barActuel.id });
     }
     return { conflits: 0 };
   }
@@ -322,15 +322,17 @@ async function synchroniserUneCommandeEnAttente(entry) {
 
   if (entry.action === 'creer' || entry.action === 'maj') {
     if (estNouvelle) {
-      const { data, error } = await client.from('commandes').insert([{
-        bar_id: barActuel.id, table_num: entry.table_num, client_nom: entry.client_nom || null,
-        statut: 'ouverte', articles: entry.articles, total: entry.total, note: entry.note || null,
-        serveuse: entry.serveuse
-      }]).select().single();
+      const { data: nouvelId, error } = await client.rpc('creer_commande_secure', {
+        p_bar_id: barActuel.id, p_table_num: entry.table_num, p_client_nom: entry.client_nom || null,
+        p_serveuse: entry.serveuse, p_articles: entry.articles, p_total: entry.total, p_note: entry.note || null
+      });
       if (error) throw error;
-      entry.id = data.id;
+      entry.id = nouvelId;
     } else {
-      await client.from('commandes').update({ articles: entry.articles, total: entry.total, note: entry.note || null }).eq('id', entry.id);
+      await client.rpc('maj_commande_secure', {
+        p_commande_id: entry.id, p_bar_id: barActuel.id,
+        p_articles: entry.articles, p_total: entry.total, p_note: entry.note || null
+      });
     }
     return { conflits: 0 };
   }
@@ -360,13 +362,12 @@ async function synchroniserUneCommandeEnAttente(entry) {
     entry.benef = benefVerif;
 
     if (estNouvelle) {
-      const { data, error } = await client.from('commandes').insert([{
-        bar_id: barActuel.id, table_num: entry.table_num, client_nom: entry.client_nom || null,
-        statut: 'ouverte', articles: entry.articles, total: entry.total, note: entry.note || null,
-        serveuse: entry.serveuse
-      }]).select().single();
+      const { data: nouvelId, error } = await client.rpc('creer_commande_secure', {
+        p_bar_id: barActuel.id, p_table_num: entry.table_num, p_client_nom: entry.client_nom || null,
+        p_serveuse: entry.serveuse, p_articles: entry.articles, p_total: entry.total, p_note: entry.note || null
+      });
       if (error) throw error;
-      entry.id = data.id;
+      entry.id = nouvelId;
     }
     let noteFinale = entry.note || null;
     if (conflits.length > 0) {
@@ -380,7 +381,7 @@ async function synchroniserUneCommandeEnAttente(entry) {
     for (const a of entry.articles || []) {
       await client.from('vente_articles').insert([{ vente_id: vente.id, bar_id: barActuel.id, boisson_designation: a.designation, quantite: a.qte, prix_unitaire: a.prix }]);
     }
-    await client.from('commandes').update({ statut: 'payee' }).eq('id', entry.id);
+    await client.rpc('marquer_commande_payee', { p_commande_id: entry.id, p_bar_id: barActuel.id });
     return { conflits: conflits.length };
   }
   return { conflits: 0 };
@@ -866,6 +867,20 @@ function lancerApplication() {
 
 async function seDeconnecter() {
   if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
+  await executerDeconnexion();
+  afficherEcranAuth();
+}
+
+// Déconnexion sans confirmation — utilisée quand le système détecte que la session
+// ne doit plus continuer (bar désactivé, accès serveuse bloqué), pas une action volontaire.
+async function forcerDeconnexion(message) {
+  await executerDeconnexion();
+  afficherEcranAuth();
+  if (message) setTimeout(() => alert(message), 200);
+}
+
+async function executerDeconnexion() {
+  clearInterval(surveillanceSessionTimer);
   await client.auth.signOut();
   barActuel = null;
   utilisateurActuel = null;
@@ -883,7 +898,29 @@ async function seDeconnecter() {
   realtimeActif = false;
   appDemarree = false;
   clearTimeout(inactiviteTimer);
-  afficherEcranAuth();
+}
+
+// Vérifie périodiquement (sans jamais exposer de donnée sensible) que la session
+// est toujours valide : bar actif, et si c'est une serveuse, son accès non bloqué.
+let surveillanceSessionTimer = null;
+function demarrerSurveillanceSession() {
+  clearInterval(surveillanceSessionTimer);
+  surveillanceSessionTimer = setInterval(async () => {
+    if (!barActuel || !utilisateurActuel) return;
+    try {
+      const { data: ok, error } = await client.rpc('verifier_session_active', {
+        p_bar_id: barActuel.id,
+        p_serveuse_id: utilisateurActuel.role === 'serveuse' ? utilisateurActuel.id : null
+      });
+      if (error) return; // ne pas déconnecter sur un simple souci réseau passager
+      if (ok === false) {
+        const msg = utilisateurActuel.role === 'serveuse'
+          ? '🚫 Ton accès a été bloqué par le gérant.'
+          : '🚫 Ce bar a été désactivé.';
+        await forcerDeconnexion(msg);
+      }
+    } catch { /* silencieux, on réessaiera au prochain cycle */ }
+  }, 30000); // toutes les 30 secondes
 }
 
 // ==================== INIT ====================
@@ -1168,7 +1205,14 @@ function activerRealtime() {
   client.channel('stock-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'boissons', filter: `bar_id=eq.${barActuel.id}` }, payload => {
       const index = boissons.findIndex(b => b.id === payload.new.id);
-      if (payload.eventType === 'UPDATE' && index !== -1) { boissons[index] = { ...boissons[index], ...payload.new }; rafrachirVueActive(); }
+      if (payload.eventType === 'UPDATE' && index !== -1) {
+        boissons[index] = { ...boissons[index], ...payload.new };
+        rafrachirVueActive();
+        // Le modal de commande n'est pas une "section" de navigation : il faut le rafraîchir à part.
+        if (document.getElementById('modal-commande')?.classList.contains('visible')) {
+          afficherBoissonsCommande(document.getElementById('modal-cmd-search')?.value || '');
+        }
+      }
     }).subscribe();
   client.channel('commandes-live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'commandes', filter: `bar_id=eq.${barActuel.id}` }, () => { chargerCommandes(); })
@@ -1839,13 +1883,16 @@ async function ouvrirNouvelleCommande() {
     return;
   }
 
-  const { data, error } = await client.from('commandes').insert([{ bar_id: barActuel.id, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0, serveuse: utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null) }]).select().single();
+  const serveuseCmd = utilisateurActuel?.role === 'gerant' ? null : (utilisateurActuel?.nom || null);
+  const { data: nouvelId, error } = await client.rpc('creer_commande_secure', {
+    p_bar_id: barActuel.id, p_table_num: table, p_client_nom: clientNom || null, p_serveuse: serveuseCmd
+  });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   document.getElementById('cmd-table').value = '';
   document.getElementById('cmd-client').value = '';
   toast('✅ Commande ouverte — ' + table);
   await chargerCommandes();
-  ouvrirModalCommande(data);
+  ouvrirModalCommande({ id: nouvelId, table_num: table, client_nom: clientNom || null, statut: 'ouverte', articles: [], total: 0, note: null, serveuse: serveuseCmd });
 }
 
 async function chargerCommandes() {
@@ -2061,9 +2108,10 @@ async function sauvegarderCommande() {
     return;
   }
 
-  const { error } = await client.from('commandes')
-    .update({ articles: commandeActive.articles, total: commandeActive.total, note })
-    .eq('id', commandeActive.id);
+  const { error } = await client.rpc('maj_commande_secure', {
+    p_commande_id: commandeActive.id, p_bar_id: barActuel.id,
+    p_articles: commandeActive.articles, p_total: commandeActive.total, p_note: note
+  });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
 
   toast('※ Commande sauvegardée !');
@@ -2157,9 +2205,10 @@ async function encaisserCommande() {
     }
 
     // Sauvegarder d'abord (avec les prix vérifiés, pas ceux potentiellement modifiés)
-    await client.from('commandes')
-      .update({ articles: cmdArticlesVerifies, total, note: noteFinale })
-      .eq('id', cmdId);
+    await client.rpc('maj_commande_secure', {
+      p_commande_id: cmdId, p_bar_id: barActuel.id,
+      p_articles: cmdArticlesVerifies, p_total: total, p_note: noteFinale
+    });
 
     // Enregistrer la vente
     const { data: vente, error: eV } = await client.from('ventes')
@@ -2178,7 +2227,7 @@ async function encaisserCommande() {
     }
 
     // Fermer la commande
-    await client.from('commandes').update({ statut: 'payee' }).eq('id', cmdId);
+    await client.rpc('marquer_commande_payee', { p_commande_id: cmdId, p_bar_id: barActuel.id });
 
     fermerModalCommande();
     toast('✅ Commande encaissée — ' + formatPrix(total));
@@ -2226,8 +2275,7 @@ async function annulerCommande(id) {
     }
   }
 
-  const { error } = await client.from('commandes')
-    .update({ statut: 'annulee' }).eq('id', id);
+  const { error } = await client.rpc('annuler_commande_secure', { p_commande_id: id, p_bar_id: barActuel.id });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
 
   toast('🗑️ Commande annulée — stock remis à jour');
@@ -2267,7 +2315,9 @@ async function envoyerPanierVersTable(cmdId) {
     if (existe) { existe.qte += panier[id]; } else { articles.push({ id: b.id, designation: b.designation, prix: b.prix_unitaire, qte: panier[id] }); }
   }
   const total = articles.reduce((s, a) => s + a.prix * a.qte, 0);
-  const { error } = await client.from('commandes').update({ articles, total }).eq('id', cmdId);
+  const { error } = await client.rpc('maj_commande_secure', {
+    p_commande_id: cmdId, p_bar_id: barActuel.id, p_articles: articles, p_total: total
+  });
   if (error) { toast('❌ ' + error.message, 'error'); return; }
   fermerModalTable(); panier = {}; mettreAJourTicket();
   toast('✅ Articles ajoutés à la table !');
@@ -2393,7 +2443,7 @@ async function validerPinServeuse() {
     if (errEl) { errEl.textContent = 'PIN incorrect'; errEl.style.display = 'block'; }
     document.getElementById('input-pin-serveuse').value = ''; return;
   }
-  utilisateurActuel = { nom: serveuseCible.nom, role: 'serveuse' };
+  utilisateurActuel = { nom: serveuseCible.nom, id: serveuseCible.id, role: 'serveuse' };
   document.getElementById('input-pin-serveuse').value = '';
   serveuseSelectionnee = null;
   if (errEl) errEl.style.display = 'none';
@@ -2407,6 +2457,7 @@ function lancerApplicationAvecRole() {
   if (nomEl) nomEl.innerText = `BarStock - ${barActuel.nom} (${utilisateurActuel.nom})`;
   appliquerRestrictions();
   activerRealtime();
+  demarrerSurveillanceSession();
   demarrerSurveillanceInactivite();
   const estGerantMsg = utilisateurActuel?.role === 'gerant';
   const heure = new Date().getHours();
@@ -2540,6 +2591,7 @@ async function supprimerServeuse(id) {
 }
 
 function changerUtilisateur() {
+  clearInterval(surveillanceSessionTimer);
   utilisateurActuel = null; pinGerantActuel = null; realtimeActif = false;
   client.removeAllChannels();
   afficherEcranRole();
