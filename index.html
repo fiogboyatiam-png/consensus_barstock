@@ -52,6 +52,10 @@
         <div style="opacity:0.7; font-size:13px; margin-top:2px;">BarStock — Gestion globale des bars</div>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button onclick="ouvrirModal2FA()"
+    style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
+    🔐 Double authentification
+  </button>
         <button onclick="changerMotDePasseAdmin()"
     style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:white; padding:9px 18px; border-radius:8px; cursor:pointer; font-weight:600;">
     🔒 Changer mot de passe
@@ -80,6 +84,7 @@
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:13px; font-weight:600; color:#555;">Téléphone du gérant</label>
           <input type="tel" id="new-bar-telephone" placeholder="Ex: +228 90 00 00 00"
+            oninput="this.value = this.value.replace(/[^0-9+\- ]/g, '')"
             style="padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px;">
         </div>
         <div style="display:flex; flex-direction:column; gap:5px;">
@@ -666,6 +671,29 @@
   </div>
 
 </div><!-- fin app-principale -->
+
+<!-- Modal Double Authentification -->
+<div class="modal-overlay" id="modal-2fa">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="modal-title">🔐 Double authentification (2FA)</div>
+    <div id="2fa-etape-liste">
+      <p style="font-size:14px; color:#555; margin-bottom:14px;">Protège ton compte super-admin avec un code à usage unique, en plus de ton mot de passe.</p>
+      <div id="2fa-facteurs-existants" style="margin-bottom:14px;"></div>
+      <button class="btn" style="width:100%; background:#1a6b3a; color:white;" onclick="demarrerEnrollement2FA()">➕ Activer la double authentification</button>
+    </div>
+    <div id="2fa-etape-qr" style="display:none;">
+      <p style="font-size:13px; color:#555; margin-bottom:10px;">Scanne ce code avec Google Authenticator, Authy, ou une appli similaire :</p>
+      <div id="2fa-qr-code" style="text-align:center; margin-bottom:14px; background:white; padding:10px; border-radius:8px;"></div>
+      <label style="font-size:13px; font-weight:600;">Code à 6 chiffres généré par l'appli</label>
+      <input type="text" id="2fa-code-verif" maxlength="6" placeholder="123456"
+        style="width:100%; padding:10px; border:2px solid #ddd; border-radius:8px; font-size:20px; text-align:center; letter-spacing:6px; margin-top:6px; box-sizing:border-box;">
+      <button class="btn" style="width:100%; background:#1a6b3a; color:white; margin-top:12px;" onclick="confirmerEnrollement2FA()">✅ Confirmer et activer</button>
+    </div>
+    <div class="modal-btns" style="margin-top:14px;">
+      <button class="btn btn-danger" onclick="fermerModal2FA()">Fermer</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>

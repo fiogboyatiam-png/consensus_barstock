@@ -469,13 +469,11 @@ async function seConnecter() {
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
-    // Vérification admin via config plutôt qu'UUID hardcodé
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(data.user.id) || data.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    // Vérification admin via la table dédiée super_admins
+    const { data: estAdmin } = await client.rpc('est_super_admin');
+    if (estAdmin) {
+      const ok = await verifierEtapeMfaAdmin();
+      if (!ok) { await client.auth.signOut(); afficherErreurAuth('Vérification en deux étapes requise.'); return; }
       afficherInterfaceAdmin();
       return;
     }
@@ -511,13 +509,11 @@ async function restaurerSession() {
     const session = sessionData.session;
     if (!session) { afficherEcranAuth(); return; }
 
-    // Vérification admin via config
-    const { data: adminCfg } = await client.from('config')
-      .select('valeur')
-      .eq('cle', 'admin_users')
-      .single();
-    const adminIds = adminCfg?.valeur ? adminCfg.valeur.split(',').map(s => s.trim()) : [];
-    if (adminIds.includes(session.user.id) || session.user.id === 'efb02e55-9cc8-4161-908d-5a744cb0b0a7') {
+    // Vérification admin via la table dédiée super_admins
+    const { data: estAdmin } = await client.rpc('est_super_admin');
+    if (estAdmin) {
+      const ok = await verifierEtapeMfaAdmin();
+      if (!ok) { await client.auth.signOut(); afficherEcranAuth(); return; }
       afficherInterfaceAdmin();
       return;
     }
@@ -673,6 +669,7 @@ async function creerBar() {
 
   if (!nom) { afficherErreurAdmin('Le nom du bar est obligatoire.'); return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { afficherErreurAdmin('Email invalide.'); return; }
+  if (telephone && !/^[0-9+\- ]+$/.test(telephone)) { afficherErreurAdmin('Le téléphone ne doit contenir que des chiffres.'); return; }
   if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
     afficherErreurAdmin('Le mot de passe doit avoir au moins 8 caractères avec majuscule, minuscule et chiffre.');
     return;
@@ -851,6 +848,80 @@ async function supprimerTousLesBars() {
 function afficherErreurAdmin(msg) {
   const el = document.getElementById('admin-erreur');
   if (el) { el.innerText = msg; el.style.display = 'block'; }
+}
+
+// ==================== 2FA SUPER ADMIN ====================
+let facteurEnCoursId = null;
+
+async function ouvrirModal2FA() {
+  document.getElementById('modal-2fa').classList.add('visible');
+  document.getElementById('2fa-etape-liste').style.display = 'block';
+  document.getElementById('2fa-etape-qr').style.display = 'none';
+
+  const { data } = await client.auth.mfa.listFactors();
+  const verifies = (data?.totp || []).filter(f => f.status === 'verified');
+  const div = document.getElementById('2fa-facteurs-existants');
+  if (verifies.length > 0) {
+    div.innerHTML = `<div style="background:#e8f5e9;color:#2e7d32;padding:10px;border-radius:8px;font-size:13px;">✅ Double authentification déjà activée sur ce compte.</div>`;
+  } else {
+    div.innerHTML = '';
+  }
+}
+
+function fermerModal2FA() {
+  document.getElementById('modal-2fa').classList.remove('visible');
+}
+
+async function demarrerEnrollement2FA() {
+  try {
+    const { data, error } = await client.auth.mfa.enroll({ factorType: 'totp' });
+    if (error) throw error;
+    facteurEnCoursId = data.id;
+    document.getElementById('2fa-qr-code').innerHTML = data.totp.qr_code; // SVG fourni directement par Supabase
+    document.getElementById('2fa-etape-liste').style.display = 'none';
+    document.getElementById('2fa-etape-qr').style.display = 'block';
+  } catch (err) {
+    alert('❌ Erreur : ' + err.message);
+  }
+}
+
+async function confirmerEnrollement2FA() {
+  const code = document.getElementById('2fa-code-verif')?.value.trim();
+  if (!code || code.length !== 6) { alert('Entre le code à 6 chiffres.'); return; }
+  try {
+    const { data: challenge, error: eChal } = await client.auth.mfa.challenge({ factorId: facteurEnCoursId });
+    if (eChal) throw eChal;
+    const { error: eVerif } = await client.auth.mfa.verify({ factorId: facteurEnCoursId, challengeId: challenge.id, code });
+    if (eVerif) throw eVerif;
+    alert('✅ Double authentification activée ! À ta prochaine connexion, un code te sera demandé.');
+    fermerModal2FA();
+  } catch (err) {
+    alert('❌ Code invalide ou expiré : ' + err.message);
+  }
+}
+
+// Après connexion réussie (email+mdp) d'un compte super-admin, vérifie s'il faut
+// encore demander le code 2FA avant de donner accès au panneau.
+async function verifierEtapeMfaAdmin() {
+  const { data: aal } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === 'aal2' && aal?.currentLevel !== 'aal2') {
+    const { data: factors } = await client.auth.mfa.listFactors();
+    const facteur = (factors?.totp || []).find(f => f.status === 'verified');
+    if (!facteur) return true; // pas de 2FA configuré, on laisse passer
+    const code = prompt('🔐 Double authentification activée.\nEntre le code à 6 chiffres de ton appli d\'authentification :');
+    if (!code) return false;
+    try {
+      const { data: challenge, error: eChal } = await client.auth.mfa.challenge({ factorId: facteur.id });
+      if (eChal) throw eChal;
+      const { error: eVerif } = await client.auth.mfa.verify({ factorId: facteur.id, challengeId: challenge.id, code: code.trim() });
+      if (eVerif) throw eVerif;
+      return true;
+    } catch (err) {
+      alert('❌ Code incorrect : ' + err.message);
+      return false;
+    }
+  }
+  return true;
 }
 
 async function seDeconnecterAdmin() {
