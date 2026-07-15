@@ -938,15 +938,19 @@ function lancerApplication() {
 
 async function seDeconnecter() {
   if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
+  const barIdAvant = barActuel?.id;
   await executerDeconnexion();
-  afficherEcranAuth();
+  if (modeAccesDirect && barIdAvant) demarrerAccesDirectServeuse(barIdAvant);
+  else afficherEcranAuth();
 }
 
 // Déconnexion sans confirmation — utilisée quand le système détecte que la session
 // ne doit plus continuer (bar désactivé, accès serveuse bloqué), pas une action volontaire.
 async function forcerDeconnexion(message) {
+  const barIdAvant = barActuel?.id;
   await executerDeconnexion();
-  afficherEcranAuth();
+  if (modeAccesDirect && barIdAvant) demarrerAccesDirectServeuse(barIdAvant);
+  else afficherEcranAuth();
   if (message) setTimeout(() => alert(message), 200);
 }
 
@@ -2423,8 +2427,99 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.getElementById('commandes')?.classList.contains('active')) afficherCommandes(); 
   }, 30000);
 
-  restaurerSession();
+  const barDirectId = new URLSearchParams(window.location.search).get('bar');
+  if (barDirectId) {
+    demarrerAccesDirectServeuse(barDirectId);
+  } else {
+    restaurerSession();
+  }
 });
+
+// ==================== ACCÈS DIRECT SERVEUSE (sans email/mot de passe) ====================
+let modeAccesDirect = false;
+
+async function demarrerAccesDirectServeuse(barId) {
+  modeAccesDirect = true;
+  try {
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'infos-bar-public', bar_id: barId })
+      }
+    );
+    const result = await res.json();
+    if (result.error || !result.data || result.data.length === 0) {
+      document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;">❌ Lien invalide ou bar introuvable.</div>';
+      return;
+    }
+
+    barActuel = { id: parseInt(barId), nom: result.data[0].nom_bar };
+    const serveuses = result.data.filter(r => r.serveuse_id).map(r => ({ id: r.serveuse_id, nom: r.serveuse_nom }));
+
+    document.getElementById('ecran-auth').style.display = 'none';
+    document.getElementById('ecran-role').style.display = 'flex';
+    const elNom = document.getElementById('role-bar-nom'); if (elNom) elNom.textContent = barActuel.nom;
+    document.getElementById('panel-gerant').style.display = 'none'; // pas d'accès gérant depuis ce lien
+    const btnGerant = document.querySelector('[onclick="connexionGerant()"]'); if (btnGerant) btnGerant.style.display = 'none';
+
+    document.getElementById('panel-serveuse').style.display = 'block';
+    const div = document.getElementById('liste-serveuses');
+    if (!div) return;
+    if (serveuses.length === 0) {
+      div.innerHTML = '<div style="color:#888;font-size:13px;">Aucune serveuse active pour ce bar.</div>';
+      return;
+    }
+    div.innerHTML = serveuses.map(s =>
+      `<button data-id="${s.id}" data-nom="${escape(s.nom)}" class="btn-choix-serveuse">👤 ${escape(s.nom)}</button>`
+    ).join('');
+    div.querySelectorAll('.btn-choix-serveuse').forEach(btn => {
+      btn.addEventListener('click', () => selectionnerServeuse(parseInt(btn.dataset.id), btn.dataset.nom));
+    });
+  } catch (err) {
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;">❌ Erreur de connexion.</div>';
+  }
+}
+
+// Remplace le PIN par une vraie connexion au compte dédié de la serveuse (mode lien direct)
+async function validerPinServeuseDirect() {
+  const serveuseCible = serveuseSelectionnee;
+  if (!serveuseCible) return;
+  const pin = document.getElementById('input-pin-serveuse')?.value;
+  const errEl = document.getElementById('erreur-pin-serveuse');
+
+  try {
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'connexion-serveuse', serveuse_id: serveuseCible.id, pin })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    // Échange le lien à usage unique contre une vraie session, sur SON compte à elle.
+    const { error: eOtp } = await client.auth.verifyOtp({
+      email: result.email, token_hash: result.token_hash, type: 'magiclink'
+    });
+    if (eOtp) throw eOtp;
+
+    utilisateurActuel = { nom: result.nom, id: serveuseCible.id, role: 'serveuse' };
+    document.getElementById('input-pin-serveuse').value = '';
+    serveuseSelectionnee = null;
+    if (errEl) errEl.style.display = 'none';
+    localStorage.setItem('barstock_bar_id', barActuel.id);
+    localStorage.setItem('barstock_bar_nom', barActuel.nom);
+    localStorage.setItem('barstock_expiration', (Date.now() + 8 * 60 * 60 * 1000).toString());
+    lancerApplicationAvecRole();
+  } catch (err) {
+    if (errEl) { errEl.textContent = err.message; errEl.style.display = 'block'; }
+    document.getElementById('input-pin-serveuse').value = '';
+  }
+}
 
 // ==================== RÔLES & SERVEUSES ====================
 function afficherEcranRole() {
@@ -2502,6 +2597,7 @@ function selectionnerServeuse(id, nom) {
 }
 
 async function validerPinServeuse() {
+  if (modeAccesDirect) { await validerPinServeuseDirect(); return; }
   const serveuseCible = serveuseSelectionnee; // capturé ici, insensible à un changement pendant l'appel réseau
   if (!serveuseCible) return;
   const pin = document.getElementById('input-pin-serveuse')?.value;
@@ -2555,12 +2651,42 @@ async function ajouterServeuse() {
   const pin = document.getElementById('srv-pin')?.value.trim();
   if (!nom) { toast('△  Nom obligatoire', 'warning'); return; }
   if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
-  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin, p_pin_gerant: pinGerantActuel });
-  if (error) { toast('❌ ' + error.message, 'error'); return; }
-  document.getElementById('srv-nom').value = '';
-  document.getElementById('srv-pin').value = '';
-  toast('✅ Serveuse ajoutée !');
-  chargerListeServeuses();
+  if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour cette action.', 'error'); return; }
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) { toast('❌ Session expirée, reconnecte-toi.', 'error'); return; }
+
+    const res = await fetch(
+      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'creer-compte-serveuse', bar_id: barActuel.id, nom, pin, pin_gerant: pinGerantActuel })
+      }
+    );
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    document.getElementById('srv-nom').value = '';
+    document.getElementById('srv-pin').value = '';
+    toast('✅ Serveuse ajoutée avec son propre compte sécurisé !');
+    chargerListeServeuses();
+  } catch (err) {
+    toast('❌ ' + err.message, 'error');
+  }
+}
+
+// Génère et copie le lien que le gérant donne à chaque serveuse (une fois suffit pour tout le bar,
+// elle choisit ensuite son propre nom dans la liste). Ce lien ne demande jamais email/mot de passe.
+function copierLienDirectServeuses() {
+  const lien = `${window.location.origin}${window.location.pathname}?bar=${barActuel.id}`;
+  navigator.clipboard.writeText(lien).then(() => {
+    alert(`✅ Lien copié !\n\n${lien}\n\nDonne ce lien à tes serveuses (WhatsApp, SMS...). Il les amène directement à l'écran "choisir son nom", sans jamais demander d'email ou de mot de passe.`);
+  }).catch(() => {
+    prompt('Copie ce lien manuellement :', lien);
+  });
 }
 
 async function chargerListeServeuses() {
@@ -2665,7 +2791,11 @@ function changerUtilisateur() {
   clearInterval(surveillanceSessionTimer);
   utilisateurActuel = null; pinGerantActuel = null; realtimeActif = false;
   client.removeAllChannels();
-  afficherEcranRole();
+  if (modeAccesDirect) {
+    demarrerAccesDirectServeuse(barActuel.id);
+  } else {
+    afficherEcranRole();
+  }
 }
 
 // ==================== PROFIL BAR ====================
