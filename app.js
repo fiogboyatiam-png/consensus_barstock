@@ -958,6 +958,7 @@ async function executerDeconnexion() {
   barActuel = null;
   utilisateurActuel = null;
   pinGerantActuel = null;
+  sessionServeuseActuelle = null;
   commandeActive = null;
   commandesOuvertes = [];
   commandeEnCours = [];
@@ -981,16 +982,19 @@ function demarrerSurveillanceSession() {
   surveillanceSessionTimer = setInterval(async () => {
     if (!barActuel || !utilisateurActuel) return;
     try {
-      const { data: ok, error } = await client.rpc('verifier_session_active', {
+      const { data: statut, error } = await client.rpc('verifier_session_active', {
         p_bar_id: barActuel.id,
-        p_serveuse_id: utilisateurActuel.role === 'serveuse' ? utilisateurActuel.id : null
+        p_serveuse_id: utilisateurActuel.role === 'serveuse' ? utilisateurActuel.id : null,
+        p_session_id: utilisateurActuel.role === 'serveuse' ? sessionServeuseActuelle : null
       });
       if (error) return; // ne pas déconnecter sur un simple souci réseau passager
-      if (ok === false) {
-        const msg = utilisateurActuel.role === 'serveuse'
-          ? '🚫 Ton accès a été bloqué par le gérant.'
-          : '🚫 Ce bar a été désactivé.';
-        await forcerDeconnexion(msg);
+      if (statut && statut !== 'ok') {
+        const messages = {
+          bar_desactive: '🚫 Ce bar a été désactivé.',
+          acces_bloque: '🚫 Ton accès a été bloqué par le gérant.',
+          autre_session: '🚫 Une connexion a eu lieu sur un autre appareil avec ce lien — tu as été déconnectée ici.'
+        };
+        await forcerDeconnexion(messages[statut] || '🚫 Session terminée.');
       }
     } catch { /* silencieux, on réessaiera au prochain cycle */ }
   }, 30000); // toutes les 30 secondes
@@ -2436,6 +2440,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== ACCÈS DIRECT SERVEUSE (via lien secret, sans email/mot de passe) ====================
 let modeAccesDirect = false;
 let tokenServeuseActuel = null;
+let sessionServeuseActuelle = null;
 
 async function demarrerAccesDirectParToken(token) {
   modeAccesDirect = true;
@@ -2496,11 +2501,12 @@ async function validerPinServeuseDirect() {
 
     // Échange le lien à usage unique contre une vraie session, sur SON compte à elle.
     const { error: eOtp } = await client.auth.verifyOtp({
-      email: result.email, token_hash: result.token_hash, type: 'magiclink'
+      token_hash: result.token_hash, type: 'magiclink'
     });
     if (eOtp) throw eOtp;
 
     utilisateurActuel = { nom: result.nom, id: serveuseCible.id, role: 'serveuse' };
+    sessionServeuseActuelle = result.session_id;
     document.getElementById('input-pin-serveuse').value = '';
     if (errEl) errEl.style.display = 'none';
     localStorage.setItem('barstock_bar_id', barActuel.id);
@@ -2674,10 +2680,23 @@ async function ajouterServeuse() {
 // Ce lien n'est affiché qu'à ce moment précis — s'il est perdu, il faut le régénérer.
 function afficherLienServeuseACopier(nom, lienToken) {
   const lien = `${window.location.origin}${window.location.pathname}?srv=${lienToken}`;
-  navigator.clipboard.writeText(lien).then(() => {
-    alert(`✅ Lien copié pour ${nom} !\n\n${lien}\n\nEnvoie-le-lui (WhatsApp, SMS...). Il l'amène directement à son écran de PIN — jamais à l'email/mot de passe.\n\n⚠️ Note-le bien : si tu le perds, il faudra en régénérer un nouveau (l'ancien deviendra invalide).`);
+  document.getElementById('lien-srv-nom').textContent = nom;
+  const champ = document.getElementById('lien-srv-champ');
+  champ.value = lien;
+  document.getElementById('modal-lien-serveuse').classList.add('visible');
+  setTimeout(() => champ.select(), 100);
+  // Tentative de copie automatique immédiate, en plus du bouton
+  navigator.clipboard?.writeText(lien).catch(() => {});
+}
+
+function copierLienModalServeuse() {
+  const champ = document.getElementById('lien-srv-champ');
+  champ.select();
+  navigator.clipboard.writeText(champ.value).then(() => {
+    toast('✅ Lien copié !');
   }).catch(() => {
-    prompt(`Lien pour ${nom} — copie-le manuellement :`, lien);
+    document.execCommand('copy');
+    toast('✅ Lien copié !');
   });
 }
 
