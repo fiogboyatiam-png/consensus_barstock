@@ -1414,8 +1414,9 @@ async function ajusterRetour(id, delta) {
   if (!confirm(msg)) return;
   try {
     const { error: eS } = await client.rpc('modifier_stock_boisson', { p_boisson_id: id, p_bar_id: barActuel.id, p_nouveau_stock: b.stock+delta, p_pin_gerant: pinGerantActuel }); if (eS) throw eS;
-    const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note:''}]).select().single(); if (eH) throw eH;
-    await client.from('vente_articles').insert([{ vente_id:tr.id, boisson_designation:typeOp, quantite:1, prix_unitaire:tImpact }]);
+    const nomResponsable = utilisateurActuel?.role === 'gerant' ? 'Gérant' : (utilisateurActuel?.nom || null);
+    const { data: tr, error: eH } = await client.from('ventes').insert([{bar_id: barActuel.id, total:tImpact, benefice:bImpact, benef:bImpact, note:'', serveuse: nomResponsable}]).select().single(); if (eH) throw eH;
+    await client.from('vente_articles').insert([{ vente_id:tr.id, bar_id:barActuel.id, boisson_designation:typeOp, quantite:1, prix_unitaire:tImpact }]);
     toast(delta>0?'↺ Retour enregistré':'📉 Perte enregistrée', delta>0?'info':'warning');
     await initialiserApplication();
   } catch (err) { toast('❌ '+err.message,'error'); }
