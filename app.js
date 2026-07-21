@@ -2500,11 +2500,12 @@ async function validerPinServeuseDirect() {
     const result = await res.json();
     if (result.error) throw new Error(result.error);
 
-    // Échange le lien à usage unique contre une vraie session, sur SON compte à elle.
-    const { error: eOtp } = await client.auth.verifyOtp({
-      token_hash: result.token_hash, type: 'magiclink'
+    // Connexion directe à SON compte, avec le mot de passe temporaire généré côté serveur
+    // pour cette connexion précise (jamais stocké, jamais réutilisable après coup).
+    const { error: eSignIn } = await client.auth.signInWithPassword({
+      email: result.email, password: result.password
     });
-    if (eOtp) throw eOtp;
+    if (eSignIn) throw eSignIn;
 
     utilisateurActuel = { nom: result.nom, id: serveuseCible.id, role: 'serveuse' };
     sessionServeuseActuelle = result.session_id;
