@@ -521,7 +521,7 @@
           </div>
           <button class="btn" onclick="ajouterServeuse()">➕ Ajouter</button>
         </div>
-        <p style="font-size:12px; color:#888; margin-bottom:16px;">💡 Chaque serveuse a son propre lien secret de connexion, affiché à sa création (bouton "🔗 Lien" pour le retrouver/régénérer).</p>
+        <p style="font-size:12px; color:#888; margin-bottom:16px;">💡 Chaque serveuse choisit son nom sur l'écran de connexion, puis tape son PIN.</p>
         <div id="liste-serveuses-gestion"></div>
       </div>
       <div class="card">
@@ -692,21 +692,6 @@
     </div>
     <div class="modal-btns" style="margin-top:14px;">
       <button class="btn btn-danger" onclick="fermerModal2FA()">Fermer</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal Lien Serveuse -->
-<div class="modal-overlay" id="modal-lien-serveuse">
-  <div class="modal-box" style="max-width:460px;">
-    <div class="modal-title">🔗 Lien de connexion de <span id="lien-srv-nom"></span></div>
-    <p style="font-size:13px; color:#555; margin-bottom:12px;">Clique dans le champ pour tout sélectionner, ou utilise le bouton Copier. Envoie ce lien à la serveuse (WhatsApp, SMS...).</p>
-    <input type="text" id="lien-srv-champ" readonly onclick="this.select()"
-      style="width:100%; padding:12px; border:2px solid #1a6b3a; border-radius:8px; font-size:13px; background:#f8fafc; box-sizing:border-box; margin-bottom:12px; cursor:pointer;">
-    <button class="btn" style="width:100%; background:#1a6b3a; color:white;" onclick="copierLienModalServeuse()">📋 Copier le lien</button>
-    <p style="font-size:12px; color:#c62828; margin-top:10px;">⚠️ Note-le bien : si tu perds ce lien, il faudra en régénérer un nouveau (celui-ci deviendra invalide).</p>
-    <div class="modal-btns" style="margin-top:10px;">
-      <button class="btn btn-danger" onclick="document.getElementById('modal-lien-serveuse').classList.remove('visible')">Fermer</button>
     </div>
   </div>
 </div>
