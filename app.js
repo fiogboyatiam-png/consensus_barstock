@@ -939,16 +939,14 @@ function lancerApplication() {
 async function seDeconnecter() {
   if (!confirm(`Déconnecter ${barActuel?.nom} ?`)) return;
   await executerDeconnexion();
-  if (modeAccesDirect && tokenServeuseActuel) demarrerAccesDirectParToken(tokenServeuseActuel);
-  else afficherEcranAuth();
+  afficherEcranAuth();
 }
 
 // Déconnexion sans confirmation — utilisée quand le système détecte que la session
 // ne doit plus continuer (bar désactivé, accès serveuse bloqué), pas une action volontaire.
 async function forcerDeconnexion(message) {
   await executerDeconnexion();
-  if (modeAccesDirect && tokenServeuseActuel) demarrerAccesDirectParToken(tokenServeuseActuel);
-  else afficherEcranAuth();
+  afficherEcranAuth();
   if (message) setTimeout(() => alert(message), 200);
 }
 
@@ -958,7 +956,6 @@ async function executerDeconnexion() {
   barActuel = null;
   utilisateurActuel = null;
   pinGerantActuel = null;
-  sessionServeuseActuelle = null;
   commandeActive = null;
   commandesOuvertes = [];
   commandeEnCours = [];
@@ -985,7 +982,7 @@ function demarrerSurveillanceSession() {
       const { data: statut, error } = await client.rpc('verifier_session_active', {
         p_bar_id: barActuel.id,
         p_serveuse_id: utilisateurActuel.role === 'serveuse' ? utilisateurActuel.id : null,
-        p_session_id: utilisateurActuel.role === 'serveuse' ? sessionServeuseActuelle : null
+        p_session_id: null
       });
       if (error) return; // ne pas déconnecter sur un simple souci réseau passager
       if (statut && statut !== 'ok') {
@@ -2430,96 +2427,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.getElementById('commandes')?.classList.contains('active')) afficherCommandes(); 
   }, 30000);
 
-  const tokenServeuse = new URLSearchParams(window.location.search).get('srv');
-  if (tokenServeuse) {
-    demarrerAccesDirectParToken(tokenServeuse);
-  } else {
-    restaurerSession();
-  }
+  restaurerSession();
 });
-
-// ==================== ACCÈS DIRECT SERVEUSE (via lien secret, sans email/mot de passe) ====================
-let modeAccesDirect = false;
-let tokenServeuseActuel = null;
-let sessionServeuseActuelle = null;
-
-async function demarrerAccesDirectParToken(token) {
-  modeAccesDirect = true;
-  tokenServeuseActuel = token;
-  try {
-    const res = await fetch(
-      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'infos-serveuse-par-token', token })
-      }
-    );
-    const result = await res.json();
-    if (result.error || !result.data) {
-      document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;">❌ Ce lien n\'est plus valide. Demande un nouveau lien à ton gérant.</div>';
-      return;
-    }
-
-    barActuel = { id: result.data.bar_id, nom: result.data.bar_nom };
-    serveuseSelectionnee = { id: result.data.serveuse_id, nom: result.data.serveuse_nom };
-
-    document.getElementById('ecran-auth').style.display = 'none';
-    document.getElementById('ecran-role').style.display = 'flex';
-    const elNom = document.getElementById('role-bar-nom'); if (elNom) elNom.textContent = barActuel.nom;
-    document.getElementById('panel-gerant').style.display = 'none';
-    const btnGerant = document.querySelector('[onclick="connexionGerant()"]'); if (btnGerant) btnGerant.style.display = 'none';
-
-    document.getElementById('panel-serveuse').style.display = 'block';
-    document.getElementById('liste-serveuses').style.display = 'none'; // pas de liste : le lien identifie déjà la personne
-    const titre = document.getElementById('titre-pin-serveuse');
-    if (titre) titre.textContent = `🔒 Bienvenue ${result.data.serveuse_nom}, entre ton mot de passe`;
-    document.getElementById('panel-pin-serveuse').style.display = 'block';
-    setTimeout(() => document.getElementById('input-pin-serveuse')?.focus(), 100);
-  } catch (err) {
-    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;">❌ Erreur de connexion.</div>';
-  }
-}
-
-// Remplace le PIN par une vraie connexion au compte dédié de la serveuse (mode lien direct)
-async function validerPinServeuseDirect() {
-  const serveuseCible = serveuseSelectionnee;
-  if (!serveuseCible) return;
-  const pin = document.getElementById('input-pin-serveuse')?.value;
-  const errEl = document.getElementById('erreur-pin-serveuse');
-
-  try {
-    const res = await fetch(
-      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'connexion-serveuse', token: tokenServeuseActuel, pin })
-      }
-    );
-    const result = await res.json();
-    if (result.error) throw new Error(result.error);
-
-    // Connexion directe à SON compte, avec le mot de passe temporaire généré côté serveur
-    // pour cette connexion précise (jamais stocké, jamais réutilisable après coup).
-    const { error: eSignIn } = await client.auth.signInWithPassword({
-      email: result.email, password: result.password
-    });
-    if (eSignIn) throw eSignIn;
-
-    utilisateurActuel = { nom: result.nom, id: serveuseCible.id, role: 'serveuse' };
-    sessionServeuseActuelle = result.session_id;
-    document.getElementById('input-pin-serveuse').value = '';
-    if (errEl) errEl.style.display = 'none';
-    localStorage.setItem('barstock_bar_id', barActuel.id);
-    localStorage.setItem('barstock_bar_nom', barActuel.nom);
-    localStorage.setItem('barstock_expiration', (Date.now() + 8 * 60 * 60 * 1000).toString());
-    lancerApplicationAvecRole();
-  } catch (err) {
-    if (errEl) { errEl.textContent = err.message; errEl.style.display = 'block'; }
-    document.getElementById('input-pin-serveuse').value = '';
-  }
-}
 
 // ==================== RÔLES & SERVEUSES ====================
 function afficherEcranRole() {
@@ -2597,7 +2506,6 @@ function selectionnerServeuse(id, nom) {
 }
 
 async function validerPinServeuse() {
-  if (modeAccesDirect) { await validerPinServeuseDirect(); return; }
   const serveuseCible = serveuseSelectionnee; // capturé ici, insensible à un changement pendant l'appel réseau
   if (!serveuseCible) return;
   const pin = document.getElementById('input-pin-serveuse')?.value;
@@ -2653,79 +2561,12 @@ async function ajouterServeuse() {
   if (!pin || pin.length < 4) { toast('△  PIN trop court (4 min)', 'warning'); return; }
   if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour cette action.', 'error'); return; }
 
-  try {
-    const { data: { session } } = await client.auth.getSession();
-    const token = session?.access_token;
-    if (!token) { toast('❌ Session expirée, reconnecte-toi.', 'error'); return; }
-
-    const res = await fetch(
-      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'creer-compte-serveuse', bar_id: barActuel.id, nom, pin, pin_gerant: pinGerantActuel })
-      }
-    );
-    const result = await res.json();
-    if (result.error) throw new Error(result.error);
-
-    document.getElementById('srv-nom').value = '';
-    document.getElementById('srv-pin').value = '';
-    chargerListeServeuses();
-    afficherLienServeuseACopier(nom, result.lien_token);
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-  }
-}
-
-// Affiche/copie le lien secret d'une serveuse (à la création, ou après régénération).
-// Ce lien n'est affiché qu'à ce moment précis — s'il est perdu, il faut le régénérer.
-function afficherLienServeuseACopier(nom, lienToken) {
-  const lien = `${window.location.origin}${window.location.pathname}?srv=${lienToken}`;
-  document.getElementById('lien-srv-nom').textContent = nom;
-  const champ = document.getElementById('lien-srv-champ');
-  champ.value = lien;
-  document.getElementById('modal-lien-serveuse').classList.add('visible');
-  setTimeout(() => champ.select(), 100);
-  // Tentative de copie automatique immédiate, en plus du bouton
-  navigator.clipboard?.writeText(lien).catch(() => {});
-}
-
-function copierLienModalServeuse() {
-  const champ = document.getElementById('lien-srv-champ');
-  champ.select();
-  navigator.clipboard.writeText(champ.value).then(() => {
-    toast('✅ Lien copié !');
-  }).catch(() => {
-    document.execCommand('copy');
-    toast('✅ Lien copié !');
-  });
-}
-
-// Régénère le lien d'une serveuse déjà existante (invalide l'ancien immédiatement).
-async function regenererLienServeuse(id, nom) {
-  if (!confirm(`Régénérer le lien de connexion de ${nom} ?\n\nL'ancien lien cessera de fonctionner immédiatement.`)) return;
-  if (!pinGerantActuel) { toast('❌ Reconnecte-toi en tant que gérant pour cette action.', 'error'); return; }
-  try {
-    const { data: { session } } = await client.auth.getSession();
-    const token = session?.access_token;
-    if (!token) { toast('❌ Session expirée, reconnecte-toi.', 'error'); return; }
-
-    const res = await fetch(
-      'https://jwskhozdukcurjnpsgtm.supabase.co/functions/v1/dynamic-processor',
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'regenerer-lien-serveuse', serveuse_id: id, bar_id: barActuel.id, pin_gerant: pinGerantActuel })
-      }
-    );
-    const result = await res.json();
-    if (result.error) throw new Error(result.error);
-
-    afficherLienServeuseACopier(nom, result.lien_token);
-  } catch (err) {
-    toast('❌ ' + err.message, 'error');
-  }
+  const { error } = await client.rpc('ajouter_serveuse', { p_bar_id: barActuel.id, p_nom: nom, p_pin: pin, p_pin_gerant: pinGerantActuel });
+  if (error) { toast('❌ ' + error.message, 'error'); return; }
+  document.getElementById('srv-nom').value = '';
+  document.getElementById('srv-pin').value = '';
+  toast('✅ Serveuse ajoutée !');
+  chargerListeServeuses();
 }
 
 async function chargerListeServeuses() {
@@ -2740,7 +2581,6 @@ async function chargerListeServeuses() {
     return `<div class="ligne-serveuse-gestion">
       <span style="font-weight:600;">👤 ${escape(s.nom)}${badge}</span>
       <div style="display:flex;gap:6px;">
-        <button class="btn btn-sm" style="background:#eef2ff;color:#3730a3;" onclick="regenererLienServeuse(${s.id}, '${escape(s.nom)}')">🔗 Lien</button>
         <button class="btn btn-sm" style="background:${estActif ? '#fff3e0' : '#e8f5e9'};color:${estActif ? '#ef6c00' : '#2e7d32'};"
           onclick="toggleAccesServeuse(${s.id}, '${escape(s.nom)}', ${!estActif})">${estActif ? '🔒 Bloquer' : '🔓 Débloquer'}</button>
         <button class="btn btn-danger btn-sm" onclick="supprimerServeuse(${s.id})">🗑️</button>
@@ -2831,11 +2671,7 @@ function changerUtilisateur() {
   clearInterval(surveillanceSessionTimer);
   utilisateurActuel = null; pinGerantActuel = null; realtimeActif = false;
   client.removeAllChannels();
-  if (modeAccesDirect) {
-    demarrerAccesDirectParToken(tokenServeuseActuel);
-  } else {
-    afficherEcranRole();
-  }
+  afficherEcranRole();
 }
 
 // ==================== PROFIL BAR ====================
